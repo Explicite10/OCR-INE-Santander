@@ -1,0 +1,77 @@
+# INE OCR: API + Ollama (Qwen3-VL) + PostgreSQL.
+#
+#   Servidor SIN GPU:          docker compose up -d --build
+#   Servidor con GPU NVIDIA:   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+#
+# La API y la interfaz quedan en http://SERVIDOR:18473  (cambiar con API_PORT en .env).
+# Ollama y PostgreSQL NO se exponen fuera del servidor: sólo la API los ve por la red interna.
+
+name: ine-ocr
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ine
+      POSTGRES_USER: ine
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en el archivo .env}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ine -d ine"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    # Para conectarte con un cliente SQL desde el servidor, descomenta:
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: "24h"     # mantiene el modelo cargado en memoria
+      OLLAMA_NUM_PARALLEL: "2"
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # Descarga el modelo la primera vez (unos 6 GB); después sólo verifica que exista.
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: "ollama:11434"
+    entrypoint: ["ollama", "pull", "${VLM_MODEL:-qwen3-vl:8b-instruct}"]
+    restart: "no"
+
+  api:
+    build: .
+    image: ine-ocr-api:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
+    ports:
+      - "${API_PORT:-18473}:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      VLM_BACKEND: ollama
+      VLM_BASE_URL: http://ollama:11434
+      VLM_MODEL: ${VLM_MODEL:-qwen3-vl:8b-instruct}
+      DATABASE_URL: postgresql+asyncpg://ine:${POSTGRES_PASSWORD}@db:5432/ine
+
+volumes:
+  pg-data:
+  ollama-models:
