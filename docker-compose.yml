@@ -33,10 +33,11 @@ services:
     environment:
       OLLAMA_KEEP_ALIVE: "24h"     # mantiene el modelo cargado en memoria
       # Peticiones al modelo a la vez. Cada una reserva su propio contexto en la VRAM.
-      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-2}
+      # 1 = carga mínima en la GPU (el servidor comparte la GPU con otros procesos de IA).
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
       # Ahorro de VRAM (útil en GPUs de 8 GB): flash attention + caché de contexto en 8 bits (q8_0)
       OLLAMA_FLASH_ATTENTION: ${OLLAMA_FLASH_ATTENTION:-1}
-      OLLAMA_KV_CACHE_TYPE: ${OLLAMA_KV_CACHE_TYPE:-f16}
+      OLLAMA_KV_CACHE_TYPE: ${OLLAMA_KV_CACHE_TYPE:-q8_0}
     volumes:
       - ollama-models:/root/.ollama
     healthcheck:
