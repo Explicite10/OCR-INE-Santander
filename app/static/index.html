@@ -40,6 +40,7 @@
   .b-ok, .b-alta { background: var(--ok-bg); color: var(--ok); }
   .b-revisar, .b-media { background: var(--warn-bg); color: var(--warn); }
   .b-error, .b-baja, .b-falla { background: var(--bad-bg); color: var(--bad); }
+  .b-rechazado { background: var(--line); color: var(--muted); text-decoration: line-through; }
   .b-wait { background: var(--line); color: var(--muted); }
   .b-no_aplica { background: var(--line); color: var(--muted); }
   .result { margin-top: 18px; display: none; }
@@ -110,7 +111,7 @@
     <div style="display:flex; gap:8px; margin:10px 0; flex-wrap:wrap">
       <input id="histQ" placeholder="Buscar nombre o archivo" class="btn" style="flex:1; min-width:180px; cursor:text">
       <select id="histEstado" class="btn">
-        <option value="">Todos</option><option value="ok">ok</option><option value="revisar">revisar</option>
+        <option value="">Todos</option><option value="ok">ok</option><option value="revisar">revisar</option><option value="rechazado">rechazado</option>
         <option value="revisado">revisado</option><option value="error">error</option>
       </select>
       <button class="btn" id="histBtn">Actualizar</button>
@@ -269,7 +270,7 @@ function show(i) {
   const r = it.data, d = r.datos, c = r.confianza || {};
   const t = r.meta?.tiempos_ms || {};
   $("summary").innerHTML = `
-    <span class="badge b-${r.estado}" style="font-size:13px">${r.estado === "ok" ? "OK" : r.estado === "revisar" ? "REVISAR" : "ERROR"}</span>
+    <span class="badge b-${r.estado}" style="font-size:13px">${r.estado === "ok" ? "OK" : r.estado === "revisar" ? "REVISAR" : r.estado === "rechazado" ? "NO ES INE" : "ERROR"}</span>
     <span class="name">${esc(d.nombre?.nombre_completo || it.name)}</span>
     <span class="meta">${esc(it.name)} · ${it.secs} s · OCR ${((t.ocr_y_recorte||0)/1000).toFixed(1)} s · VLM ${((t.vlm_anverso||0)/1000).toFixed(1)} s${t.vlm_reverso ? " + " + (t.vlm_reverso/1000).toFixed(1) + " s" : ""} · MRZ vía ${esc(r.meta?.mrz_fuente || "—")}</span>`;
 

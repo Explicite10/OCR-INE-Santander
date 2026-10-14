@@ -93,6 +93,7 @@ def diagnose(r: dict) -> dict:
         "validaciones_falla": ";".join(c["regla"] for c in r.get("validaciones") or [] if c["resultado"] == "falla"),
         "advertencias": ";".join(a.split("(")[0].strip() for a in r.get("advertencias") or []),
         "error_tipo": (r.get("error") or "").split(":")[0] or None,
+        "senales_ine": ";".join(meta.get("senales_ine") or []),
         "paginas": meta.get("paginas"),
         "rotado": meta.get("rotado"),
         "recorte_anverso": meta.get("recorte_anverso"),
@@ -150,6 +151,7 @@ def write_reports(out: Path) -> None:
         f"- OK (sin revisión): **{states['ok']}** ({pct(states['ok'])})",
         f"- Revisar: **{states['revisar']}** ({pct(states['revisar'])})",
         f"- Error: **{states['error']}** ({pct(states['error'])})",
+        f"- Rechazados (no parecen INE): **{states['rechazado']}** ({pct(states['rechazado'])})",
         f"- MRZ válida (4 dígitos verificadores): **{sum(r['mrz_valida'] for r in rows)}** "
         f"({pct(sum(r['mrz_valida'] for r in rows))})",
     ]
@@ -170,6 +172,10 @@ def write_reports(out: Path) -> None:
     lines += [f"| {k} | {v} ({pct(v)}) |" for k, v in checks.most_common(15)]
     lines += ["", "## Campos enviados a revisión", "", "| Campo | Documentos |", "|---|---|"]
     lines += [f"| {k} | {v} ({pct(v)}) |" for k, v in review.most_common()]
+    rechazos = Counter(r["error"].split(":")[0] for r in rows if r["estado"] == "rechazado" and r["error"])
+    if rechazos:
+        lines += ["", "## Motivos de rechazo", "", "| Motivo | Documentos |", "|---|---|"]
+        lines += [f"| {k} | {v} |" for k, v in rechazos.most_common()]
     if warnings:
         lines += ["", "## Advertencias", "", "| Advertencia | Documentos |", "|---|---|"]
         lines += [f"| {k} | {v} |" for k, v in warnings.most_common(10)]

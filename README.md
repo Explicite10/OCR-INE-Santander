@@ -36,6 +36,14 @@ PDF/imagen ─► páginas (250 dpi)
   por la MRZ + estado de nacimiento + la parte legible. Se marcan en `campos_reconstruidos`
   y por defecto el documento va a revisión (`REVISAR_RECONSTRUIDOS`).
 
+**Sólo credenciales INE mexicanas.** Antes de llamar al modelo de visión se suman las señales que
+encontró el OCR (encabezado "INSTITUTO NACIONAL ELECTORAL" +3, MRZ `IDMEX` +3, etiquetas como
+NOMBRE / CURP / CLAVE DE ELECTOR +1 cada una). Con menos de `INE_MIN_SENALES` (2) el documento se
+devuelve con `estado = "rechazado"` y el motivo en `error`, sin gastar GPU. Una MRZ de otro país
+(`IDUSA…`, `P<ESP…`) se rechaza siempre. Si el modelo de visión ya leyó la imagen y aun así no hay
+encabezado, MRZ válida, CURP ni clave de elector con estructura válida, también se rechaza.
+Se apaga con `RECHAZAR_NO_INE=false`; `meta.senales_ine` dice qué se encontró.
+
 **Confianza**: `alta` = dos fuentes independientes coinciden o lo respalda un dígito
 verificador · `media` = una fuente con estructura válida · `baja` = desacuerdo o ilegible.
 `estado = "revisar"` si un campo crítico queda en `baja`, la MRZ no es válida o hubo reconstrucción.
@@ -154,6 +162,7 @@ El lote comparte el modelo con producción: córrelo fuera de horario o con `--c
 | PUT | `/v1/ine/extracciones/{id}/revision` | Guarda la corrección humana (`{"datos": {...}, "revisado_por": "..."}`) |
 | GET | `/health` | Estado del modelo y de la base de datos |
 
+`estado` puede ser `ok`, `revisar`, `rechazado` (no es una INE; ver `error`) o `error`.
 Si `API_KEY` está definida, todas (menos `/health`) piden el header `X-API-Key`.
 La base guarda los datos extraídos, nunca las imágenes.
 

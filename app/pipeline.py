@@ -7,7 +7,8 @@ import time
 
 import numpy as np
 
-from . import front_ocr, mrz
+from . import front_ocr, gate, mrz
+from . import validators as v
 from .config import get_settings
 from .documents import DocumentError, encode_png, load_pages
 from .layout import Layout, analyze
@@ -21,6 +22,21 @@ log = logging.getLogger(__name__)
 
 def _ms(t: float) -> int:
     return int(t * 1000)
+
+
+def _meta(s, times: dict[str, int], t_start: float, layout: Layout, mrz_source: str | None,
+          vlm: VlmClient | None, senales: list[str]) -> Meta:
+    return Meta(
+        tiempo_total_ms=_ms(time.perf_counter() - t_start),
+        tiempos_ms=times,
+        modelo_vlm=s.vlm_model if vlm is not None and s.vlm_enabled else None,
+        paginas=layout.pages,
+        rotado=layout.rotated,
+        recorte_anverso=layout.front.method if layout.front else None,
+        recorte_reverso=layout.back.method if layout.back else None,
+        mrz_fuente=mrz_source,
+        senales_ine=senales,
+    )
 
 
 async def process(files: list[bytes], vlm: VlmClient | None, filename: str | None = None,
@@ -46,6 +62,15 @@ async def process(files: list[bytes], vlm: VlmClient | None, filename: str | Non
     layout: Layout = await asyncio.to_thread(analyze, pages, ocr_read)
     times["ocr_y_recorte"] = _ms(time.perf_counter() - t)
     warnings = list(layout.warnings)
+
+    # 2b. ¿Es una INE? Se decide con el OCR antes de gastar el VLM (sin OCR no hay con qué juzgar).
+    front_ancla = layout.front is not None and layout.front.method == "ancla"
+    mrz_mex = layout.back is not None and layout.back.method == "ancla"
+    veredicto = gate.evaluate(layout.page_lines, front_ancla, mrz_mex, s.ine_min_senales)
+    if s.rechazar_no_ine and s.ocr_enabled and not veredicto.es_ine:
+        log.info("Documento rechazado: %s", veredicto.motivo)
+        return ResultadoINE(archivo=filename, estado="rechazado", error=veredicto.motivo, advertencias=warnings,
+                            meta=_meta(s, times, t_start, layout, None, vlm, veredicto.senales))
 
     ocr_front = front_ocr.extract(layout.front.lines if layout.front and layout.front.method == "ancla" else [])
     ocr_mrz = mrz.parse(layout.back.mrz_lines) if layout.back and layout.back.mrz_lines else None
@@ -96,16 +121,18 @@ async def process(files: list[bytes], vlm: VlmClient | None, filename: str | Non
     if vlm_front is None and vlm is not None and s.vlm_enabled:
         estado = "revisar"
 
-    meta = Meta(
-        tiempo_total_ms=_ms(time.perf_counter() - t_start),
-        tiempos_ms=times,
-        modelo_vlm=s.vlm_model if vlm is not None and s.vlm_enabled else None,
-        paginas=layout.pages,
-        rotado=layout.rotated,
-        recorte_anverso=layout.front.method if layout.front else None,
-        recorte_reverso=layout.back.method if layout.back else None,
-        mrz_fuente=mrz_source,
-    )
+    meta = _meta(s, times, t_start, layout, mrz_source, vlm, veredicto.senales)
+
+    # 5. Verificación final: el VLM leyó la imagen y aun así no hay NADA con estructura de INE.
+    #    Sólo aplica si el VLM respondió; si falló o está apagado no hay con qué juzgar y queda "revisar".
+    if (s.rechazar_no_ine and vlm_front is not None and not front_ancla
+            and not (chosen is not None and chosen.n_validos > 0)
+            and not v.curp_valid(datos.curp) and not v.clave_valid(datos.clave_elector)):
+        motivo = ("No se reconoció una credencial INE: sin encabezado, sin MRZ válida y sin CURP ni "
+                  "clave de elector con estructura válida")
+        log.info("Documento rechazado tras el VLM: %s", motivo)
+        return ResultadoINE(archivo=filename, estado="rechazado", error=motivo, advertencias=warnings, meta=meta)
+
     result = ResultadoINE(
         archivo=filename, estado=estado, datos=datos, confianza=merger.conf, campos_a_revisar=review,
         campos_reconstruidos=merger.reconstructed,

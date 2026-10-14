@@ -72,12 +72,14 @@ class Meta(BaseModel):
     recorte_anverso: str | None = None
     recorte_reverso: str | None = None
     mrz_fuente: str | None = None
+    senales_ine: list[str] = Field(default_factory=list, description="Indicios de que es una INE (OCR)")
 
 
 class ResultadoINE(BaseModel):
     id: str | None = Field(None, description="Id en la base de datos (si está activa)")
     archivo: str | None = None
-    estado: Literal["ok", "revisar", "error"]
+    estado: Literal["ok", "revisar", "error", "rechazado"] = Field(
+        description="rechazado = el documento no parece una credencial INE mexicana (ver `error`)")
     datos: DatosINE = Field(default_factory=DatosINE)
     confianza: dict[str, Confianza] = Field(default_factory=dict)
     campos_a_revisar: list[str] = Field(default_factory=list)

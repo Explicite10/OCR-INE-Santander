@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     # Si un campo se reconstruyó (p. ej. CURP tapada por un sello) el documento va a revisión.
     revisar_reconstruidos: bool = True
 
+    # Rechazar documentos que no parecen una credencial INE mexicana (estado "rechazado").
+    # Antes del VLM se suman señales del OCR (encabezado +3, MRZ mexicana +3, cada etiqueta +1);
+    # con menos de `ine_min_senales` se rechaza. Al final también se rechaza si no se reconoció nada.
+    rechazar_no_ine: bool = True
+    ine_min_senales: int = 2
+
     # --- API ---
     # Número de documentos que se procesan a la vez dentro del proceso.
     max_concurrent_jobs: int = 2

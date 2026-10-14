@@ -66,6 +66,7 @@ class Layout:
     rotated: bool
     pages: int
     warnings: list[str]
+    page_lines: list[list[Line]] = field(default_factory=list)  # OCR de cada página (ya rotada si aplicó)
 
 
 def _n(t: str) -> str:
@@ -208,6 +209,7 @@ def analyze(pages: list[np.ndarray], ocr_read) -> Layout:
     warnings: list[str] = []
     rotated = False
     page_cache: list[tuple[np.ndarray, list[Line]]] = []
+    page_lines: list[list[Line]] = []
 
     for i, page in enumerate(pages):
         img, lines = page, ocr_read(page)
@@ -225,6 +227,7 @@ def analyze(pages: list[np.ndarray], ocr_read) -> Layout:
                     img, lines, (mrz, back_box, front_box) = r_img, r_lines, r
                     rotated = True
                     break
+        page_lines.append(lines)
 
         if back is None and back_box:
             back = Side(i, back_box, _crop(img, back_box), _lines_in(lines, back_box), "ancla",
@@ -245,4 +248,4 @@ def analyze(pages: list[np.ndarray], ocr_read) -> Layout:
         back = Side(idx, Box(0, 0, img.shape[1], img.shape[0]), img, lines, "pagina_completa")
         warnings.append("No se localizó la MRZ del reverso; se analizó la página completa")
 
-    return Layout(front, back, rotated, len(pages), warnings)
+    return Layout(front, back, rotated, len(pages), warnings, page_lines)
