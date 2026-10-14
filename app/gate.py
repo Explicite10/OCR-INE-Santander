@@ -1,13 +1,14 @@
 """Decide si el documento es una credencial INE mexicana antes de gastar el modelo de visión.
 
-Se suman las señales que ya encontró el OCR en todas las páginas:
+Reglas, en orden:
 
-* encabezado del anverso (ancla)          +3
-* MRZ mexicana ("IDMEX...")               +3
-* etiquetas propias de la credencial      +1 cada una (NOMBRE, DOMICILIO, CLAVE DE ELECTOR, CURP, ...)
-
-Si el puntaje no llega a `ine_min_senales` se rechaza. Una MRZ de otro país
-("IDUSA...", "P<ESP...") se rechaza directamente, aunque haya otras señales.
+1. Señales negativas (texto de OTRO documento: licencia, pasaporte, IMSS, cédula...) → rechazo inmediato.
+   Incluye la MRZ de pasaporte ("P<MEX...", de cualquier país) y la MRZ de credenciales de otro país ("IDUSA...").
+2. Debe haber al menos UNA señal exclusiva de la INE: encabezado del anverso (ancla), MRZ "IDMEX",
+   "CLAVE DE ELECTOR", "CREDENCIAL PARA VOTAR", "INSTITUTO NACIONAL/FEDERAL ELECTORAL" o "AÑO DE REGISTRO".
+   Las etiquetas genéricas (NOMBRE, CURP, VIGENCIA, ESTADOS UNIDOS MEXICANOS...) también las traen
+   licencias y pasaportes: sólo suman puntaje, no bastan solas.
+3. Puntaje total (exclusivas +3, genéricas +1) ≥ `ine_min_senales`.
 """
 
 import re
@@ -17,20 +18,44 @@ from difflib import SequenceMatcher
 from .layout import _MRZ1, _n, is_credencial, is_header
 from .ocr import Line
 
-LABELS = {
+EXCLUSIVE_LABELS = {
+    "CLAVEDEELECTOR": "CLAVE DE ELECTOR",
+    "ANODEREGISTRO": "AÑO DE REGISTRO",
+}
+GENERIC_LABELS = {
     "NOMBRE": "NOMBRE",
     "DOMICILIO": "DOMICILIO",
-    "CLAVEDEELECTOR": "CLAVE DE ELECTOR",
     "CURP": "CURP",
     "SECCION": "SECCIÓN",
     "VIGENCIA": "VIGENCIA",
     "FECHADENACIMIENTO": "FECHA DE NACIMIENTO",
-    "ANODEREGISTRO": "AÑO DE REGISTRO",
     "ESTADOSUNIDOSMEXICANOS": "ESTADOS UNIDOS MEXICANOS",
 }
-# Primera línea MRZ de documentos de viaje: tipo ("P<", "ID", "I<", "AC", "C<", "V<") + país de 3 letras.
-# El tipo va seguido de "<" o forma "ID"/"AC": así la línea de nombres de una INE ("PEREZ<LOPEZ...") no cuenta.
-_FOREIGN_MRZ = re.compile(r"^(?:P<|I[D<]|A[C<]|C<|V<)([A-Z]{3})[A-Z0-9<]{15,}$")
+# Texto que NO aparece en una INE y sí en otros documentos de identidad mexicanos.
+NEGATIVE = {
+    "LICENCIAPARACONDUCIR": "licencia de conducir",
+    "LICENCIADECONDUCIR": "licencia de conducir",
+    "LICENCIADEMANEJO": "licencia de conducir",
+    "SECRETARIADEMOVILIDAD": "licencia de conducir",
+    "TIPODESANGRE": "licencia de conducir",
+    "PASAPORTE": "pasaporte",
+    "PASSPORT": "pasaporte",
+    "CEDULAPROFESIONAL": "cédula profesional",
+    "ACTADENACIMIENTO": "acta de nacimiento",
+    "SEGUROSOCIAL": "credencial del IMSS",
+    "INAPAM": "credencial del INAPAM",
+    "CARTILLA": "cartilla militar",
+    "TARJETADECIRCULACION": "tarjeta de circulación",
+    "RESIDENTETEMPORAL": "tarjeta de residente (INM)",
+    "RESIDENTEPERMANENTE": "tarjeta de residente (INM)",
+    "INSTITUTONACIONALDEMIGRACION": "documento del INM",
+    "SITUACIONFISCAL": "constancia del SAT",
+}
+NEGATIVE_EXACT = {"RFC": "licencia o documento fiscal (trae RFC)"}
+
+_PASSPORT_MRZ = re.compile(r"^P<([A-Z]{3})[A-Z0-9<]{15,}$")
+# Primera línea MRZ de credenciales (TD1): tipo "ID"/"I<"/"AC"/"C<"/"V<" + país de 3 letras.
+_TD1_MRZ = re.compile(r"^(?:I[D<]|A[C<]|C<|V<)([A-Z]{3})[A-Z0-9<]{15,}$")
 
 
 @dataclass
@@ -45,47 +70,58 @@ def _mexican_like(country: str) -> bool:
     return SequenceMatcher(None, country, "MEX").ratio() >= 0.6  # a una letra de distancia del OCR
 
 
-def foreign_mrz(lines: list[Line]) -> str | None:
-    """Código de país de una MRZ que NO es mexicana, si aparece."""
+def other_document(lines: list[Line], mrz_mex: bool) -> str | None:
+    """Describe el documento ajeno detectado (p. ej. "pasaporte"), o None."""
     for l in lines:
         t = _n(l.text)
-        if len(t) < 20 or t.count("<") < 2 or re.search(r"[1IL]?D[MN]EX", t) or _MRZ1.search(t):
-            continue
-        m = _FOREIGN_MRZ.match(t)
-        if m and not _mexican_like(m.group(1)):
-            return m.group(1)
+        if t in NEGATIVE_EXACT:
+            return NEGATIVE_EXACT[t]
+        for key, what in NEGATIVE.items():
+            if key in t:
+                return what
+        if len(t) >= 20 and t.count("<") >= 2:
+            m = _PASSPORT_MRZ.match(t)
+            if m:
+                return f"pasaporte ({m.group(1)})"
+            if not mrz_mex and not re.search(r"[1IL]?D[MN]EX", t) and not _MRZ1.search(t):
+                m = _TD1_MRZ.match(t)
+                if m and not _mexican_like(m.group(1)):
+                    return f"documento de otro país ({m.group(1)})"
     return None
 
 
 def evaluate(page_lines: list[list[Line]], front_ancla: bool, mrz_mex: bool, min_senales: int) -> Veredicto:
-    senales: list[str] = []
-    puntaje = 0
-    if front_ancla:
-        senales.append("encabezado")
-        puntaje += 3
-    if mrz_mex:
-        senales.append("mrz_mexicana")
-        puntaje += 3
-
     all_lines = [l for lines in page_lines for l in lines]
-    country = None if mrz_mex else foreign_mrz(all_lines)
-    if country:
-        return Veredicto(False, puntaje, senales, f"La MRZ corresponde a un documento de otro país ({country})")
 
-    found: set[str] = set()
+    other = other_document(all_lines, mrz_mex)
+    if other:
+        return Veredicto(False, 0, [], f"No es una credencial INE: parece {other}")
+
+    exclusive: set[str] = set()
+    generic: set[str] = set()
+    if front_ancla:
+        exclusive.add("encabezado")
+    if mrz_mex:
+        exclusive.add("mrz_mexicana")
     for l in all_lines:
         t = _n(l.text)
-        if not front_ancla and (is_header(t) or is_credencial(t)):
-            found.add("INSTITUTO NACIONAL ELECTORAL" if is_header(t) else "CREDENCIAL PARA VOTAR")
-        for key, label in LABELS.items():
+        if is_header(t):
+            exclusive.add("INSTITUTO NACIONAL ELECTORAL")
+        if is_credencial(t):
+            exclusive.add("CREDENCIAL PARA VOTAR")
+        for key, label in EXCLUSIVE_LABELS.items():
+            if key in t:
+                exclusive.add(label)
+        for key, label in GENERIC_LABELS.items():
             if t == key or (len(key) >= 8 and key in t):
-                found.add(label)
-    senales += sorted(found)
-    puntaje += len(found)
+                generic.add(label)
 
-    if puntaje < min_senales:
-        motivo = ("No parece una credencial INE: no se encontró encabezado, MRZ mexicana ni etiquetas "
-                  "de la credencial" if not senales else
-                  f"No parece una credencial INE: sólo se encontró {', '.join(senales)}")
+    senales = sorted(exclusive) + sorted(generic)
+    puntaje = 3 * len(exclusive) + len(generic)
+    if not exclusive:
+        motivo = ("No es una credencial INE: no se encontró encabezado del INE, MRZ mexicana ni clave de elector"
+                  + (f" (sólo {', '.join(senales)})" if senales else ""))
         return Veredicto(False, puntaje, senales, motivo)
+    if puntaje < min_senales:
+        return Veredicto(False, puntaje, senales, f"No es una credencial INE: señales insuficientes ({puntaje})")
     return Veredicto(True, puntaje, senales)

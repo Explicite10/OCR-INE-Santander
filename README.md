@@ -1,7 +1,7 @@
 # INE OCR API
 
 API en FastAPI que extrae los datos del **anverso y reverso** de credenciales INE
-(PDF o imagen; fotocopias en blanco y negro, con sellos) y devuelve un JSON
+(PDF; fotocopias en blanco y negro, con sellos) y devuelve un JSON
 estructurado con **confianza por campo** y **validaciones**.
 
 Todo corre local y gratis: **PaddleOCR** + **Qwen3-VL 8B** (Ollama en Mac, vLLM en servidor).
@@ -36,13 +36,18 @@ PDF/imagen ─► páginas (250 dpi)
   por la MRZ + estado de nacimiento + la parte legible. Se marcan en `campos_reconstruidos`
   y por defecto el documento va a revisión (`REVISAR_RECONSTRUIDOS`).
 
-**Sólo credenciales INE mexicanas.** Antes de llamar al modelo de visión se suman las señales que
-encontró el OCR (encabezado "INSTITUTO NACIONAL ELECTORAL" +3, MRZ `IDMEX` +3, etiquetas como
-NOMBRE / CURP / CLAVE DE ELECTOR +1 cada una). Con menos de `INE_MIN_SENALES` (2) el documento se
-devuelve con `estado = "rechazado"` y el motivo en `error`, sin gastar GPU. Una MRZ de otro país
-(`IDUSA…`, `P<ESP…`) se rechaza siempre. Si el modelo de visión ya leyó la imagen y aun así no hay
-encabezado, MRZ válida, CURP ni clave de elector con estructura válida, también se rechaza.
+**Sólo credenciales INE mexicanas.** Antes de llamar al modelo de visión se revisa el texto del OCR:
+1. Texto de otro documento (LICENCIA PARA CONDUCIR, PASAPORTE, RFC, TIPO DE SANGRE, IMSS, INM, cédula,
+   acta…), la MRZ de pasaporte (`P<MEX…`) o la de una credencial de otro país (`IDUSA…`) → `rechazado`.
+2. Debe aparecer al menos una señal **exclusiva** de la INE: encabezado "INSTITUTO NACIONAL ELECTORAL",
+   "CREDENCIAL PARA VOTAR", MRZ `IDMEX`, "CLAVE DE ELECTOR" o "AÑO DE REGISTRO". Etiquetas genéricas
+   (CURP, NOMBRE, VIGENCIA, ESTADOS UNIDOS MEXICANOS) también las traen licencias y pasaportes: sólo suman.
+3. Si el modelo de visión ya leyó la imagen y aun así no hay encabezado, MRZ válida ni clave de elector
+   con estructura válida, también se rechaza (el CURP no cuenta: lo traen otros documentos).
+
+El resultado lleva `estado = "rechazado"` y el motivo en `error`, sin gastar GPU en los casos 1 y 2.
 Se apaga con `RECHAZAR_NO_INE=false`; `meta.senales_ine` dice qué se encontró.
+La API sólo acepta **PDF** (`SOLO_PDF=true`; otro formato responde 415).
 
 **Confianza**: `alta` = dos fuentes independientes coinciden o lo respalda un dígito
 verificador · `media` = una fuente con estructura válida · `baja` = desacuerdo o ilegible.

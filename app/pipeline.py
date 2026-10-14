@@ -123,12 +123,13 @@ async def process(files: list[bytes], vlm: VlmClient | None, filename: str | Non
 
     meta = _meta(s, times, t_start, layout, mrz_source, vlm, veredicto.senales)
 
-    # 5. Verificación final: el VLM leyó la imagen y aun así no hay NADA con estructura de INE.
+    # 5. Verificación final: el VLM leyó la imagen y aun así no hay NADA exclusivo de la INE
+    #    (el CURP no cuenta: también lo traen pasaportes y licencias).
     #    Sólo aplica si el VLM respondió; si falló o está apagado no hay con qué juzgar y queda "revisar".
     if (s.rechazar_no_ine and vlm_front is not None and not front_ancla
             and not (chosen is not None and chosen.n_validos > 0)
-            and not v.curp_valid(datos.curp) and not v.clave_valid(datos.clave_elector)):
-        motivo = ("No se reconoció una credencial INE: sin encabezado, sin MRZ válida y sin CURP ni "
+            and not v.clave_valid(datos.clave_elector)):
+        motivo = ("No se reconoció una credencial INE: sin encabezado, sin MRZ válida y sin "
                   "clave de elector con estructura válida")
         log.info("Documento rechazado tras el VLM: %s", motivo)
         return ResultadoINE(archivo=filename, estado="rechazado", error=motivo, advertencias=warnings, meta=meta)

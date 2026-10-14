@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from . import pipeline
 from .config import get_settings
 from .db import Database, Extraccion
+from .documents import PDF_MAGIC
 from .ocr import engine
 from .schemas import ExtraccionDetalle, ExtraccionResumen, ListaExtracciones, ResultadoINE, Revision
 from .vlm import VlmClient
@@ -81,13 +82,15 @@ async def _read(f: UploadFile) -> bytes:
         raise HTTPException(status_code=413, detail=f"{f.filename}: excede {get_settings().max_upload_mb} MB")
     if not data:
         raise HTTPException(status_code=400, detail=f"{f.filename}: archivo vacío")
+    if get_settings().solo_pdf and PDF_MAGIC not in data[:1024]:
+        raise HTTPException(status_code=415, detail=f"{f.filename}: sólo se aceptan archivos PDF")
     return data
 
 
 @app.post("/v1/ine/extraer", response_model=ResultadoINE, response_model_exclude_none=False,
           dependencies=[Depends(check_api_key)])
 async def extraer(
-    archivo: UploadFile = File(..., description="PDF o imagen con anverso (y opcionalmente reverso)"),
+    archivo: UploadFile = File(..., description="PDF con anverso (y opcionalmente reverso)"),
     reverso: UploadFile | None = File(None, description="Reverso, si viene en un archivo aparte"),
     incluir_recortes: bool = Query(False, description="Devuelve los recortes en base64 (PNG) para revisión"),
 ) -> ResultadoINE:

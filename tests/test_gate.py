@@ -21,20 +21,49 @@ def test_encabezado_basta():
     assert v.es_ine and "encabezado" in v.senales
 
 
-def test_etiquetas_sin_ancla_pasan():
-    lines = [L("NOMBRE"), L("DOMICILIO", 40), L("CURP", 80)]
+def test_clave_de_elector_sin_ancla_pasa():
+    lines = [L("NOMBRE"), L("DOMICILIO", 40), L("CLAVE DE ELECTOR", 80), L("CURP", 120)]
     v = gate.evaluate([lines], front_ancla=False, mrz_mex=False, min_senales=2)
-    assert v.es_ine and v.puntaje == 3
+    assert v.es_ine and v.puntaje == 6 and "CLAVE DE ELECTOR" in v.senales
+
+
+def test_solo_etiquetas_genericas_no_bastan():
+    lines = [L("NOMBRE"), L("DOMICILIO", 40), L("CURP", 80), L("VIGENCIA", 120)]
+    v = gate.evaluate([lines], front_ancla=False, mrz_mex=False, min_senales=2)
+    assert not v.es_ine and "clave de elector" in v.motivo
 
 
 def test_documento_cualquiera_se_rechaza():
     lines = [L("FACTURA"), L("TOTAL $ 1,234.00", 40), L("GRACIAS POR SU COMPRA", 80)]
     v = gate.evaluate([lines], front_ancla=False, mrz_mex=False, min_senales=2)
-    assert not v.es_ine and "No parece una credencial INE" in v.motivo
+    assert not v.es_ine and "No es una credencial INE" in v.motivo
+
+
+def test_licencia_de_conducir_se_rechaza():
+    lines = [L("ESTADOS UNIDOS MEXICANOS"), L("SECRETARIA DE MOVILIDAD", 30), L("LICENCIA PARA CONDUCIR", 60),
+             L("CURP", 90), L("JUJA010922HDFRMLA9", 120), L("VIGENCIA PERMANENTE", 150), L("TIPO DE SANGRE O+", 180)]
+    v = gate.evaluate([lines], front_ancla=False, mrz_mex=False, min_senales=2)
+    assert not v.es_ine and "licencia" in v.motivo
+
+
+def test_licencia_vieja_con_rfc_se_rechaza():
+    lines = [L("ESTADOS UNIDOS MEXICANOS"), L("Licencia No.", 30), L("RFC", 60), L("LUAL810415", 90),
+             L("Vigencia PERMANENTE", 120)]
+    v = gate.evaluate([lines], front_ancla=False, mrz_mex=False, min_senales=2)
+    assert not v.es_ine and "RFC" in v.motivo
+
+
+def test_pasaporte_mexicano_se_rechaza():
+    lines = [L("ESTADOS UNIDOS MEXICANOS"), L("CURP/ Personal No", 60), L("JUJA010922HDFRMLA9", 90),
+             L("P<MEXJUAREZ<JAIMES<<ALEXIS<EDUARDO<<<<<<<<<<<<", 300),
+             L("N042064760MEX0109224M3208081<<<<<<<<<<<<<<06", 330)]
+    v = gate.evaluate([lines], front_ancla=False, mrz_mex=False, min_senales=2)
+    assert not v.es_ine and "pasaporte" in v.motivo
+    assert gate.other_document([L("PASAPORTE")], False) == "pasaporte"
 
 
 def test_mrz_de_otro_pais_se_rechaza_aunque_haya_etiquetas():
-    lines = [L("NOMBRE"), L("DOMICILIO", 40), L("IDUSA1234567890<<1234567890123", 200),
+    lines = [L("NOMBRE"), L("CLAVE DE ELECTOR", 40), L("IDUSA1234567890<<1234567890123", 200),
              L("8503121H3012317USA<<<<<<<<<<<4", 230)]
     v = gate.evaluate([lines], front_ancla=False, mrz_mex=False, min_senales=2)
     assert not v.es_ine and "USA" in v.motivo
@@ -42,9 +71,9 @@ def test_mrz_de_otro_pais_se_rechaza_aunque_haya_etiquetas():
 
 def test_mrz_mexicana_mal_leida_no_es_extranjera():
     l1, l2, l3 = make_mrz()
-    assert gate.foreign_mrz([L(l1.replace("IDMEX", "IDHEX")), L(l2), L(l3)]) is None
-    assert gate.foreign_mrz([L(l1), L(l2.replace("MEX", "M3X")), L(l3)]) is None
-    assert gate.foreign_mrz([L("P<ESPGARCIA<<MARIA<<<<<<<<<<<<<<<<<<<<<")]) == "ESP"
+    assert gate.other_document([L(l1.replace("IDMEX", "IDHEX")), L(l2), L(l3)], False) is None
+    assert gate.other_document([L(l1), L(l2.replace("MEX", "M3X")), L(l3)], False) is None
+    assert gate.other_document([L("P<ESPGARCIA<<MARIA<<<<<<<<<<<<<<<<<<<<<")], False) == "pasaporte (ESP)"
 
 
 def _png() -> bytes:
@@ -68,7 +97,7 @@ def test_pipeline_rechaza_antes_del_vlm(fake_ocr):
     fake_ocr([L("RECIBO DE LUZ"), L("TOTAL A PAGAR", 40)])
     r = asyncio.run(pipeline.process([_png()], None, "recibo.png"))
     assert r.estado == "rechazado"
-    assert "No parece una credencial INE" in r.error
+    assert "No es una credencial INE" in r.error
     assert r.datos.curp is None and "vlm_anverso" not in r.meta.tiempos_ms
 
 

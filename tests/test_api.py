@@ -42,6 +42,11 @@ def test_requires_api_key(client):
     assert r.status_code == 401
 
 
+def test_solo_pdf(client):
+    r = client.post("/v1/ine/extraer", files={"archivo": ("a.png", b"\x89PNG\r\n", "image/png")}, headers=H)
+    assert r.status_code == 415
+
+
 def test_extract_saves_and_lists(client):
     r = client.post("/v1/ine/extraer", files={"archivo": ("a.pdf", b"%PDF-1.4", "application/pdf")}, headers=H)
     assert r.status_code == 200
