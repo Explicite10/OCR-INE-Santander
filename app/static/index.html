@@ -95,10 +95,13 @@
   <label class="drop" id="drop">
     <input type="file" id="file" accept=".pdf,image/*" multiple hidden>
     <strong>Arrastra aquí uno o varios PDF / imágenes de INE</strong>
-    <small>o haz clic para elegir · se procesan uno por uno, en tu equipo</small>
+    <small>o haz clic para elegir · se procesan en el servidor, varios a la vez según la opción de abajo</small>
   </label>
   <div class="opts">
     <label><input type="checkbox" id="pair"> Anverso y reverso vienen en 2 archivos separados (elige los 2 a la vez)</label>
+    <label>En paralelo:
+      <select id="parallel" class="btn"><option>1</option><option selected>2</option><option>3</option></select>
+    </label>
   </div>
   <div class="queue" id="queue"></div>
 
@@ -139,7 +142,8 @@
 const $ = (id) => document.getElementById(id);
 const items = [];   // {name, status, data, error}
 let current = -1;
-let busy = false;
+let running = 0;
+$("parallel").addEventListener("change", () => run());
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
@@ -182,10 +186,11 @@ function renderQueue() {
 }
 
 async function run() {
-  if (busy) return;
+  if (running >= +$("parallel").value) return;
   const i = items.findIndex(it => it.status === "wait");
   if (i < 0) return;
-  busy = true; items[i].status = "run"; renderQueue();
+  running++; items[i].status = "run"; renderQueue();
+  run();  // arranca el siguiente si todavía hay lugar
   const fd = new FormData();
   fd.append("archivo", items[i].files[0]);
   if (items[i].files[1]) fd.append("reverso", items[i].files[1]);
@@ -201,7 +206,7 @@ async function run() {
     items[i].error = e.message; items[i].status = "error";
   }
   items[i].secs = ((performance.now() - t0) / 1000).toFixed(1);
-  busy = false; show(i); run();
+  running--; show(i); run();
   if ($("histCard").style.display !== "none") loadHistory();
 }
 

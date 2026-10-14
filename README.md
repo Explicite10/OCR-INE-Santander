@@ -124,6 +124,26 @@ docker compose logs -f api      # esperar "Application startup complete"
   ~15 GB de disco; internet en el primer arranque (imágenes + modelo).
 - Con GPU se necesita el NVIDIA Container Toolkit.
 
+### Pruebas por lote en el servidor
+
+El servicio `lote` corre `scripts/procesar_lote.py` dentro de Docker, con el mismo Ollama que la API
+(no arranca con `up`; sólo con `run`). Los PDFs nunca salen del servidor.
+
+```bash
+mkdir -p lote/pdfs lote/resultados        # copiar los PDFs a lote/pdfs (scp/rsync)
+docker compose run --rm lote lote/pdfs --salida lote/resultados --concurrencia 3 --recortes
+docker compose run --rm lote --salida lote/resultados --solo-resumen     # sólo regenerar reportes
+```
+
+Genera en `lote/resultados/`:
+- `resumen.md`: tasas, tiempos por etapa, validaciones que más fallan (sin datos personales).
+- `diagnostico.csv`: una fila por documento con estado, reglas que fallaron, advertencias,
+  confianza y tiempos, **sin nombres, CURP ni domicilio**. Es lo que se comparte para analizar mejoras.
+- `resultados.csv` y `json/`: datos completos (personales; no sacar del servidor).
+
+Si el contenedor no puede escribir en `lote/`: `sudo chown -R 1000:1000 lote`.
+El lote comparte el modelo con producción: córrelo fuera de horario o con `--concurrencia` baja.
+
 ### Endpoints
 
 | Método | Ruta | Uso |

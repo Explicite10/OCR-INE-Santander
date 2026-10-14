@@ -11,3 +11,4 @@ tests
 *.csv
 docker-compose*.yml
 README.md
+lote

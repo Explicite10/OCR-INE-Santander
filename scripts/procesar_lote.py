@@ -79,6 +79,34 @@ def flatten(r: dict) -> dict:
     return row
 
 
+def diagnose(r: dict) -> dict:
+    """Fila SIN datos personales (ni nombres, ni CURP, ni domicilio): sólo qué falló y cuánto tardó.
+    Es lo que se puede compartir para analizar y mejorar el sistema."""
+    meta = r.get("meta") or {}
+    tiempos = meta.get("tiempos_ms") or {}
+    conf = r.get("confianza") or {}
+    row = {
+        "archivo": r.get("archivo"),
+        "estado": r.get("estado"),
+        "campos_a_revisar": ";".join(r.get("campos_a_revisar") or []),
+        "campos_reconstruidos": ";".join(r.get("campos_reconstruidos") or []),
+        "validaciones_falla": ";".join(c["regla"] for c in r.get("validaciones") or [] if c["resultado"] == "falla"),
+        "advertencias": ";".join(a.split("(")[0].strip() for a in r.get("advertencias") or []),
+        "error_tipo": (r.get("error") or "").split(":")[0] or None,
+        "paginas": meta.get("paginas"),
+        "rotado": meta.get("rotado"),
+        "recorte_anverso": meta.get("recorte_anverso"),
+        "recorte_reverso": meta.get("recorte_reverso"),
+        "mrz_fuente": meta.get("mrz_fuente"),
+        "tiempo_total_ms": meta.get("tiempo_total_ms"),
+    }
+    for etapa, ms in tiempos.items():
+        row[f"ms_{etapa}"] = ms
+    for f in CONF_FIELDS:
+        row[f"conf_{f}"] = conf.get(f)
+    return row
+
+
 def write_reports(out: Path) -> None:
     results = []
     for p in sorted((out / "json").glob("*.json")):
@@ -94,6 +122,12 @@ def write_reports(out: Path) -> None:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()
         w.writerows(rows)
+    diag = [diagnose(r) for r in results]
+    fields = list(dict.fromkeys(k for d in diag for k in d))
+    with open(out / "diagnostico.csv", "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerows(diag)
 
     total = len(rows)
     states = Counter(r["estado"] for r in rows)
@@ -122,6 +156,12 @@ def write_reports(out: Path) -> None:
     if times:
         lines += [f"- Tiempo por documento: mediana {statistics.median(times):.1f} s, "
                   f"p90 {sorted(times)[int(0.9 * (len(times) - 1))]:.1f} s, total {sum(times) / 60:.1f} min"]
+    stages: dict[str, list[float]] = {}
+    for r in results:
+        for etapa, ms in ((r.get("meta") or {}).get("tiempos_ms") or {}).items():
+            stages.setdefault(etapa, []).append(ms / 1000)
+    if stages:
+        lines += ["- Mediana por etapa: " + ", ".join(f"{k} {statistics.median(v):.1f} s" for k, v in stages.items())]
     lines += ["", "## Confianza por campo", "", "| Campo | Alta | Media | Baja | Sin dato |", "|---|---|---|---|---|"]
     for f in CONF_FIELDS:
         c = Counter(r[f"conf_{f}"] for r in rows)

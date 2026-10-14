@@ -32,7 +32,11 @@ services:
     restart: unless-stopped
     environment:
       OLLAMA_KEEP_ALIVE: "24h"     # mantiene el modelo cargado en memoria
-      OLLAMA_NUM_PARALLEL: "2"
+      # Peticiones al modelo a la vez. Cada una reserva su propio contexto en la VRAM.
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-2}
+      # Ahorro de VRAM (útil en GPUs de 8 GB): flash attention + caché de contexto en 8 bits (q8_0)
+      OLLAMA_FLASH_ATTENTION: ${OLLAMA_FLASH_ATTENTION:-1}
+      OLLAMA_KV_CACHE_TYPE: ${OLLAMA_KV_CACHE_TYPE:-f16}
     volumes:
       - ollama-models:/root/.ollama
     healthcheck:
@@ -71,6 +75,27 @@ services:
       VLM_BASE_URL: http://ollama:11434
       VLM_MODEL: ${VLM_MODEL:-qwen3-vl:8b-instruct}
       DATABASE_URL: postgresql+asyncpg://ine:${POSTGRES_PASSWORD}@db:5432/ine
+
+  # Procesamiento por lote (pruebas). No arranca con "up"; se usa con:
+  #   docker compose run --rm lote lote/pdfs --salida lote/resultados --concurrencia 3
+  # La carpeta ./lote del servidor se ve dentro del contenedor como /app/lote.
+  lote:
+    image: ine-ocr-api:latest
+    profiles: ["lote"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      VLM_BACKEND: ollama
+      VLM_BASE_URL: http://ollama:11434
+      VLM_MODEL: ${VLM_MODEL:-qwen3-vl:8b-instruct}
+    volumes:
+      - ${LOTE_DIR:-./lote}:/app/lote
+    entrypoint: ["python", "-m", "scripts.procesar_lote"]
+    restart: "no"
 
 volumes:
   pg-data:
