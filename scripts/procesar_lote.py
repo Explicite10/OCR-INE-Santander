@@ -14,6 +14,7 @@ import asyncio
 import base64
 import csv
 import json
+import re
 import statistics
 import sys
 import time
@@ -101,6 +102,22 @@ def diagnose(r: dict) -> dict:
         "mrz_fuente": meta.get("mrz_fuente"),
         "tiempo_total_ms": meta.get("tiempo_total_ms"),
     }
+    # Detalles no personales de algunas validaciones: similitudes (0-1) entre fuentes y, cuando el
+    # nombre no cuadra con los códigos, qué parte difiere (paterno / materno / nombre).
+    checks = {c["regla"]: c for c in r.get("validaciones") or []}
+    for regla, col in (("nombre_vlm_vs_ocr", "sim_nombre_vlm_ocr"), ("nombre_vs_mrz", "sim_nombre_mrz"),
+                       ("domicilio_vlm_vs_ocr", "sim_domicilio_vlm_ocr")):
+        m = re.search(r"similitud ([\d.]+)", (checks.get(regla) or {}).get("detalle") or "")
+        row[col] = m.group(1) if m else None
+    difs = []
+    for regla in ("clave_elector_vs_nombre", "curp_vs_nombre", "curp_consonantes_vs_nombre"):
+        c = checks.get(regla)
+        m = re.search(r"\(difiere: ([^)]*)\)", (c or {}).get("detalle") or "")
+        if c and c["resultado"] == "falla" and m:
+            difs.append(f"{regla.split('_vs_')[0]}: {m.group(1)}")
+    row["nombre_vs_codigos_difiere"] = " | ".join(difs) or None
+    desempates = [c["detalle"] for k, c in checks.items() if k.endswith("_desempate")]
+    row["desempates"] = " | ".join(desempates) or None
     for etapa, ms in tiempos.items():
         row[f"ms_{etapa}"] = ms
     for f in CONF_FIELDS:

@@ -23,7 +23,7 @@ PDF/imagen ─► páginas (250 dpi)
 |---|---|
 | Fecha de nacimiento | MRZ (dígito verificador), CURP, clave de elector, VLM, OCR |
 | Sexo | MRZ, CURP, clave de elector, VLM |
-| CURP / clave de elector | VLM vs OCR, estructura + dígito verificador del CURP, fecha/sexo de la MRZ, iniciales del nombre |
+| CURP / clave de elector | VLM vs OCR, estructura + dígito verificador del CURP, fecha/sexo de la MRZ, iniciales del nombre (si VLM y OCR leen dos códigos válidos distintos, se queda el único que cuadra con MRZ y nombre: `*_desempate`) |
 | Nombre | VLM vs OCR vs línea 3 de la MRZ, iniciales de CURP y clave |
 | Sección, vigencia | VLM vs MRZ |
 | CIC, identificador | MRZ con dígito verificador |
@@ -36,17 +36,26 @@ PDF/imagen ─► páginas (250 dpi)
   por la MRZ + estado de nacimiento + la parte legible. Se marcan en `campos_reconstruidos`
   y por defecto el documento va a revisión (`REVISAR_RECONSTRUIDOS`).
 
-**Sólo credenciales INE mexicanas.** Antes de llamar al modelo de visión se revisa el texto del OCR:
-1. Texto de otro documento (LICENCIA PARA CONDUCIR, PASAPORTE, RFC, TIPO DE SANGRE, IMSS, INM, cédula,
-   acta…), la MRZ de pasaporte (`P<MEX…`) o la de una credencial de otro país (`IDUSA…`) → `rechazado`.
-2. Debe aparecer al menos una señal **exclusiva** de la INE: encabezado "INSTITUTO NACIONAL ELECTORAL",
-   "CREDENCIAL PARA VOTAR", MRZ `IDMEX`, "CLAVE DE ELECTOR" o "AÑO DE REGISTRO". Etiquetas genéricas
-   (CURP, NOMBRE, VIGENCIA, ESTADOS UNIDOS MEXICANOS) también las traen licencias y pasaportes: sólo suman.
-3. Si el modelo de visión ya leyó la imagen y aun así no hay encabezado, MRZ válida ni clave de elector
-   con estructura válida, también se rechaza (el CURP no cuenta: lo traen otros documentos).
+**Credenciales inclinadas, chicas o muy tenues.** El anverso y el reverso se ubican con sus anclas
+en el texto del OCR (encabezado y MRZ), probando la página girada 90°, 180° y 270° si hace falta.
+Si en ninguna página aparece un ancla, el modelo de visión ubica las credenciales (`VLM_LOCALIZADOR`),
+cada recorte se endereza y amplía, y se repite el OCR ahí; `meta.recorte_anverso` / `recorte_reverso`
+dicen cómo se obtuvo cada cara: `ancla`, `localizador` o `pagina_completa`.
 
-El resultado lleva `estado = "rechazado"` y el motivo en `error`, sin gastar GPU en los casos 1 y 2.
-Se apaga con `RECHAZAR_NO_INE=false`; `meta.senales_ine` dice qué se encontró.
+**Sólo credenciales INE mexicanas.** Con el texto del OCR, antes de llamar al modelo de visión:
+1. Texto de otro documento (LICENCIA PARA CONDUCIR, PASAPORTE, RFC, TIPO DE SANGRE, IMSS, INM, cédula,
+   acta…), la MRZ de pasaporte (`P<MEX…`) o la de una credencial de otro país (`IDUSA…`) → `rechazado`
+   de inmediato, sin gastar GPU.
+2. Se cuentan las señales de INE (`meta.senales_ine`): las **exclusivas** (encabezado "INSTITUTO NACIONAL
+   ELECTORAL", "CREDENCIAL PARA VOTAR", MRZ `IDMEX`, "CLAVE DE ELECTOR", "AÑO DE REGISTRO") y las genéricas
+   (CURP, NOMBRE, VIGENCIA…, que también traen licencias y pasaportes). Si no hay ninguna, el OCR no vio
+   la credencial pero el modelo de visión todavía puede verla: el documento sigue (sólo con el VLM
+   apagado se rechaza aquí).
+3. Si el modelo de visión ya leyó la imagen y aun así no hay encabezado, MRZ válida ni clave de elector
+   con estructura válida, se rechaza (el CURP no cuenta: lo traen otros documentos).
+
+El resultado lleva `estado = "rechazado"` y el motivo en `error`.
+Se apaga con `RECHAZAR_NO_INE=false`.
 La API sólo acepta **PDF** (`SOLO_PDF=true`; otro formato responde 415).
 
 **Confianza**: `alta` = dos fuentes independientes coinciden o lo respalda un dígito
@@ -152,6 +161,8 @@ Genera en `lote/resultados/`:
 - `resumen.md`: tasas, tiempos por etapa, validaciones que más fallan (sin datos personales).
 - `diagnostico.csv`: una fila por documento con estado, reglas que fallaron, advertencias,
   confianza y tiempos, **sin nombres, CURP ni domicilio**. Es lo que se comparte para analizar mejoras.
+  Incluye las similitudes VLM/OCR/MRZ del nombre y domicilio (`sim_*`), qué parte del nombre no
+  cuadra con los códigos (`nombre_vs_codigos_difiere`: paterno / materno / nombre) y los desempates.
 - `resultados.csv` y `json/`: datos completos (personales; no sacar del servidor).
 
 Si el contenedor no puede escribir en `lote/`: `sudo chown -R 1000:1000 lote`.

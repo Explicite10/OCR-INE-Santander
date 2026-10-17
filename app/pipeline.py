@@ -11,11 +11,11 @@ from . import front_ocr, gate, mrz
 from . import validators as v
 from .config import get_settings
 from .documents import DocumentError, encode_png, load_pages
-from .layout import Layout, analyze
+from .layout import Box, CardBox, Layout, analyze, analyze_boxes
 from .merge import CRITICAL_FIELDS, Merger, needs_review
 from .ocr import engine
 from .schemas import Meta, ResultadoINE
-from .vlm import BACK_PROMPT, BACK_SCHEMA, FRONT_PROMPT, FRONT_SCHEMA, VlmClient
+from .vlm import BACK_PROMPT, BACK_SCHEMA, FRONT_PROMPT, FRONT_SCHEMA, VlmClient, VlmError
 
 log = logging.getLogger(__name__)
 
@@ -61,16 +61,41 @@ async def process(files: list[bytes], vlm: VlmClient | None, filename: str | Non
     ocr_read = engine.read if s.ocr_enabled else (lambda img: [])
     layout: Layout = await asyncio.to_thread(analyze, pages, ocr_read)
     times["ocr_y_recorte"] = _ms(time.perf_counter() - t)
-    warnings = list(layout.warnings)
 
-    # 2b. ¿Es una INE? Se decide con el OCR antes de gastar el VLM (sin OCR no hay con qué juzgar).
-    front_ancla = layout.front is not None and layout.front.method == "ancla"
-    mrz_mex = layout.back is not None and layout.back.method == "ancla"
-    veredicto = gate.evaluate(layout.page_lines, front_ancla, mrz_mex, s.ine_min_senales)
-    if s.rechazar_no_ine and s.ocr_enabled and not veredicto.es_ine:
+    def gate_eval() -> gate.Veredicto:
+        front_ancla = layout.front is not None and layout.front.method == "ancla"
+        mrz_mex = layout.back is not None and layout.back.method == "ancla"
+        return gate.evaluate(layout.page_lines, front_ancla, mrz_mex, s.ine_min_senales)
+
+    # 2b. Texto de OTRO documento (licencia, pasaporte...): se rechaza sin gastar el VLM.
+    #     Sin VLM tampoco hay quien pueda ver lo que el OCR no vio: se rechaza desde aquí.
+    veredicto = gate_eval()
+    vlm_on = vlm is not None and s.vlm_enabled
+    if s.rechazar_no_ine and s.ocr_enabled and (veredicto.otro_documento or (not vlm_on and not veredicto.es_ine)):
         log.info("Documento rechazado: %s", veredicto.motivo)
-        return ResultadoINE(archivo=filename, estado="rechazado", error=veredicto.motivo, advertencias=warnings,
+        return ResultadoINE(archivo=filename, estado="rechazado", error=veredicto.motivo,
+                            advertencias=list(layout.warnings),
                             meta=_meta(s, times, t_start, layout, None, vlm, veredicto.senales))
+
+    # 2c. Sin anclas en ninguna página: el VLM ubica las credenciales y se repite el OCR en los recortes.
+    if vlm_on and s.vlm_localizador and s.ocr_enabled and not layout.anchored:
+        t = time.perf_counter()
+        try:
+            cards: list[CardBox] = []
+            for i, page in enumerate(layout.page_images):
+                found, _ = await vlm.locate(page)
+                cards += [CardBox(i, Box(*c["bbox_2d"]), c["lado"], c["rotacion"]) for c in found]
+                if any(c.lado == "anverso" for c in cards) and any(c.lado == "reverso" for c in cards):
+                    break
+            if cards:
+                layout = await asyncio.to_thread(analyze_boxes, layout, cards, ocr_read)
+                veredicto = gate_eval()
+        except VlmError as e:
+            log.error("Localizador falló: %s", e)
+            layout.warnings.append("El localizador de credenciales falló; se analizó la página completa")
+        times["localizacion_vlm"] = _ms(time.perf_counter() - t)
+    warnings = list(layout.warnings)
+    front_ancla = layout.front is not None and layout.front.method == "ancla"
 
     ocr_front = front_ocr.extract(layout.front.lines if layout.front and layout.front.method == "ancla" else [])
     ocr_mrz = mrz.parse(layout.back.mrz_lines) if layout.back and layout.back.mrz_lines else None

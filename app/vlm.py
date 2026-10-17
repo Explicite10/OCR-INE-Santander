@@ -12,6 +12,7 @@ import logging
 import time
 from typing import Any
 
+import cv2
 import httpx
 import numpy as np
 
@@ -89,6 +90,35 @@ Transcribe los 3 renglones EXACTAMENTE, carácter por carácter, incluyendo cada
 Si un carácter no se distingue, escribe tu mejor lectura; no omitas caracteres."""
 
 
+LOCATE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "credenciales": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "lado": {"type": "string", "enum": ["anverso", "reverso", "desconocido"]},
+                    "bbox_2d": {"type": "array", "items": {"type": "integer"}, "minItems": 4, "maxItems": 4},
+                    "rotacion": {"type": "integer", "enum": [0, 90, 180, 270]},
+                },
+                "required": ["lado", "bbox_2d", "rotacion"],
+            },
+        },
+    },
+    "required": ["credenciales"],
+}
+
+# Se usa sólo cuando el OCR no encontró las anclas (credencial inclinada, chica o muy tenue).
+LOCATE_PROMPT = """La imagen es una página escaneada de {w}x{h} píxeles. Puede contener una credencial para votar del INE (México): el ANVERSO (foto, encabezado "INSTITUTO NACIONAL ELECTORAL", NOMBRE, DOMICILIO, CLAVE DE ELECTOR, CURP) y/o el REVERSO (franja de 3 renglones tipo máquina con "<<<" abajo), a veces las dos caras en la misma página, giradas, inclinadas o pequeñas.
+
+Devuelve en "credenciales" cada credencial que veas:
+- bbox_2d: [x1, y1, x2, y2] en píxeles de esta imagen, el rectángulo completo de la tarjeta (ligeramente holgado).
+- lado: "anverso", "reverso" o "desconocido".
+- rotacion: grados en sentido horario (0, 90, 180 o 270) que hay que girar el recorte para que el texto quede derecho.
+Si no hay ninguna credencial, devuelve una lista vacía. No incluyas otros documentos ni sellos."""
+
+
 class VlmClient:
     def __init__(self, settings: Settings | None = None) -> None:
         self.s = settings or get_settings()
@@ -97,11 +127,41 @@ class VlmClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
-    async def extract(self, img: np.ndarray, prompt: str, schema: dict[str, Any]) -> tuple[dict, float]:
-        """Devuelve (json, segundos)."""
+    async def locate(self, img: np.ndarray) -> tuple[list[dict], float]:
+        """Pide al VLM los rectángulos de las credenciales en la página.
+
+        La imagen se manda reducida (vlm_locate_max_side) para que el modelo la vea
+        completa y sin recortes internos; las coordenadas se devuelven ya escaladas a
+        la imagen original: [{"lado", "bbox_2d": [x1, y1, x2, y2], "rotacion"}, ...].
+        """
+        h, w = img.shape[:2]
+        scale = min(1.0, self.s.vlm_locate_max_side / max(h, w))
+        small = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA) if scale < 1 else img
+        sh, sw = small.shape[:2]
+        data, secs = await self.extract(small, LOCATE_PROMPT.format(w=sw, h=sh), LOCATE_SCHEMA, max_side=None)
+        cards = []
+        for c in data.get("credenciales") or []:
+            try:
+                x1, y1, x2, y2 = (float(v) for v in c["bbox_2d"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if x2 <= x1 or y2 <= y1:
+                continue
+            cards.append({
+                "lado": c.get("lado") if c.get("lado") in ("anverso", "reverso") else "desconocido",
+                "bbox_2d": [int(x1 / scale), int(y1 / scale), int(x2 / scale), int(y2 / scale)],
+                "rotacion": c.get("rotacion") if c.get("rotacion") in (0, 90, 180, 270) else 0,
+            })
+        return cards, secs
+
+    async def extract(self, img: np.ndarray, prompt: str, schema: dict[str, Any],
+                      max_side: int | None = -1) -> tuple[dict, float]:
+        """Devuelve (json, segundos). `max_side=-1` usa vlm_max_side; None manda la imagen tal cual."""
         if img is None or img.size == 0:
             raise VlmError("Imagen vacía")
-        b64 = base64.b64encode(encode_png(img, self.s.vlm_max_side)).decode()
+        if max_side == -1:
+            max_side = self.s.vlm_max_side
+        b64 = base64.b64encode(encode_png(img, max_side)).decode()
         last: Exception | None = None
         for attempt in range(self.s.vlm_max_retries + 1):
             t0 = time.perf_counter()

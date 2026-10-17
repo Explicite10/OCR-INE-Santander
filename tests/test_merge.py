@@ -106,3 +106,43 @@ def test_no_reconstruction_without_validated_identity():
     mg = run(vlm_front(curp=damaged, fecha_nacimiento=""), ocr_front(curp=None, fecha_nacimiento=None,
                                                                     clave_elector=None), broken_mrz)
     assert "curp" not in mg.reconstructed
+
+
+def test_desempate_entre_dos_codigos_validos_por_mrz_y_nombre():
+    """VLM y OCR leyeron dos claves válidas distintas; sólo una cuadra con la fecha de la MRZ."""
+    otra = CLAVE[:6] + "850313" + CLAVE[12:]  # un día de diferencia: estructura válida
+    mg = run(vlm_front(clave_elector=otra), ocr_front(clave_elector=CLAVE))
+    assert mg.datos.clave_elector == CLAVE and mg.conf["clave_elector"] in ("media", "alta")
+    d = next(c for c in mg.checks if c.regla == "clave_elector_desempate")
+    assert "ocr" in d.detalle and "fecha de la MRZ" in d.detalle
+    assert "clave_elector" not in needs_review(mg.conf)
+
+
+def test_desempate_no_aplica_si_ambos_cuadran():
+    otra = CLAVE[:15] + "999"  # sólo cambia la terminación: nada permite decidir
+    mg = run(vlm_front(clave_elector=otra), ocr_front(clave_elector=CLAVE))
+    assert mg.conf["clave_elector"] == "baja"
+
+
+def test_validaciones_se_actualizan_tras_reconstruir_la_curp():
+    damaged = CURP[:1] + CURP[2:10] + "HUP" + CURP[13:]
+    mg = run(vlm_front(curp=damaged), ocr_front(curp=None))
+    assert "curp" in mg.reconstructed
+    fecha = next(c for c in mg.checks if c.regla == "fecha_nacimiento_consistente")
+    assert fecha.resultado == "ok"
+    assert len([c for c in mg.checks if c.regla == "fecha_nacimiento_consistente"]) == 1
+
+
+def test_detalle_dice_que_parte_del_nombre_no_cuadra():
+    mg = run(vlm_front(apellido_materno="GOMEZ"), ocr_front(nombre_lineas=["PEREZ", "GOMEZ", "JUAN CARLOS"]))
+    d = next(c for c in mg.checks if c.regla == "clave_elector_vs_nombre")
+    assert d.resultado == "falla" and "(difiere: materno)" in d.detalle
+
+
+def test_codigo_postal_en_medio_del_renglon():
+    from app.merge import parse_address
+
+    dom = parse_address(["C REFORMA 10", "C.P. 06000 COL CENTRO", "CUAUHTEMOC, CDMX"])
+    assert dom.codigo_postal == "06000" and dom.colonia == "COL CENTRO" and dom.estado == "CIUDAD DE MEXICO"
+    dom = parse_address(["C REFORMA 10", "COL CENTRO 06000", "CUAUHTEMOC, CDMX"])
+    assert dom.codigo_postal == "06000" and dom.colonia == "COL CENTRO"

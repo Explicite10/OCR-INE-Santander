@@ -118,3 +118,85 @@ def test_pipeline_ine_con_mrz_pasa(fake_ocr):
     assert r.estado != "rechazado"
     assert "mrz_mexicana" in r.meta.senales_ine
     assert r.datos.cic == "123456789"
+
+
+# ---------------------------------------------------------------- con VLM: el OCR no ve nada, el VLM sí
+
+
+class FakeVlm:
+    """VLM simulado: `locate` devuelve las cajas indicadas; `extract` devuelve `front` para el anverso."""
+
+    def __init__(self, cards=(), front=None):
+        self.cards, self.front = list(cards), front or {}
+        self.locate_calls = 0
+
+    async def locate(self, img):
+        self.locate_calls += 1
+        return self.cards, 0.1
+
+    async def extract(self, img, prompt, schema, max_side=-1):
+        if "mrz_linea1" in schema["properties"]:
+            return {"mrz_linea1": "", "mrz_linea2": "", "mrz_linea3": ""}, 0.1
+        return self.front, 0.1
+
+
+def _page(w=2000, h=1400) -> bytes:
+    ok, buf = cv2.imencode(".png", np.full((h, w, 3), 255, np.uint8))
+    assert ok
+    return buf.tobytes()
+
+
+@pytest.fixture
+def with_vlm(monkeypatch):
+    from app import config
+
+    monkeypatch.setenv("OCR_ENABLED", "true")
+    monkeypatch.setenv("VLM_ENABLED", "true")
+    config.get_settings.cache_clear()
+    yield lambda read: monkeypatch.setattr(pipeline.engine, "read", read)
+    config.get_settings.cache_clear()
+
+
+def test_sin_senales_no_se_rechaza_antes_del_vlm(with_vlm):
+    """OCR sin señales (copia tenue): el VLM lee la página completa y el documento NO se rechaza
+    si él sí encontró una clave de elector válida."""
+    with_vlm(lambda img: [L("ruido"), L("mas ruido", 40)])
+    vlm = FakeVlm(front={"clave_elector": "PRLPJN85031209H400", "apellido_paterno": "PEREZ", "nombres": "JUAN"})
+    r = asyncio.run(pipeline.process([_page()], vlm, "tenue.pdf"))
+    assert r.estado == "revisar"  # sin MRZ queda a revisión, pero no se perdió
+    assert r.datos.clave_elector == "PRLPJN85031209H400"
+    assert vlm.locate_calls == 1 and "localizacion_vlm" in r.meta.tiempos_ms
+
+
+def test_sin_senales_y_vlm_sin_nada_se_rechaza_al_final(with_vlm):
+    with_vlm(lambda img: [L("RECIBO DE LUZ"), L("TOTAL A PAGAR", 40)])
+    r = asyncio.run(pipeline.process([_page()], FakeVlm(), "recibo.pdf"))
+    assert r.estado == "rechazado" and "tras" not in (r.error or "") and "sin encabezado" in r.error
+    assert "vlm_anverso" in r.meta.tiempos_ms
+
+
+def test_otro_documento_se_rechaza_sin_gastar_vlm(with_vlm):
+    with_vlm(lambda img: [L("LICENCIA PARA CONDUCIR"), L("NOMBRE", 40)])
+    vlm = FakeVlm()
+    r = asyncio.run(pipeline.process([_page()], vlm, "licencia.pdf"))
+    assert r.estado == "rechazado" and "licencia" in r.error
+    assert vlm.locate_calls == 0 and "vlm_anverso" not in r.meta.tiempos_ms
+
+
+def test_localizador_recorta_y_encuentra_la_mrz(with_vlm):
+    """La página completa no tiene anclas (credencial chica); el VLM da la caja, el recorte se
+    amplía y ahí el OCR sí encuentra la MRZ: el reverso queda como 'ancla'."""
+    l1, l2, l3 = make_mrz()
+
+    def read(img):
+        if img.shape[1] >= 1500:  # página completa: nada legible
+            return [L("x")]
+        return [L(l1, 300), L(l2, 325), L(l3, 350)]  # recorte ampliado: MRZ
+
+    with_vlm(read)
+    vlm = FakeVlm(cards=[{"lado": "reverso", "bbox_2d": [200, 200, 900, 650], "rotacion": 0}])
+    r = asyncio.run(pipeline.process([_page()], vlm, "chica.pdf"))
+    assert r.estado != "rechazado"
+    assert r.meta.recorte_reverso == "ancla" and r.datos.cic == "123456789"
+    assert "mrz_mexicana" in r.meta.senales_ine
+    assert any("ubicada por el modelo" in w for w in r.advertencias)

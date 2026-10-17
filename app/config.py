@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # Ollama: False desactiva el "razonamiento" en modelos que lo soportan; None no lo envía.
     vlm_think: bool | None = None
     vlm_enabled: bool = True  # False = sólo OCR + MRZ (útil para depurar)
+    # Si el OCR no encuentra las anclas (encabezado / MRZ) en ninguna página, se pide al VLM que
+    # ubique las credenciales y se repite el OCR sobre esos recortes (credenciales inclinadas o chicas).
+    vlm_localizador: bool = True
+    vlm_locate_max_side: int = 1000  # lado mayor (px) de la página que se manda al localizador
 
     # --- OCR ---
     ocr_det_model: str = "PP-OCRv5_mobile_det"
@@ -39,8 +43,10 @@ class Settings(BaseSettings):
     revisar_reconstruidos: bool = True
 
     # Rechazar documentos que no parecen una credencial INE mexicana (estado "rechazado").
-    # Antes del VLM se suman señales del OCR (encabezado +3, MRZ mexicana +3, cada etiqueta +1);
-    # con menos de `ine_min_senales` se rechaza. Al final también se rechaza si no se reconoció nada.
+    # Antes del VLM sólo se rechaza lo que claramente es OTRO documento (licencia, pasaporte, RFC...).
+    # Sin señales de INE en el OCR (encabezado +3, MRZ mexicana +3, cada etiqueta +1; menos de
+    # `ine_min_senales`) el documento sigue al VLM, y se rechaza al final si tampoco él reconoció
+    # encabezado, MRZ ni clave de elector válida. Con el VLM apagado se rechaza desde el OCR.
     rechazar_no_ine: bool = True
     ine_min_senales: int = 2
 

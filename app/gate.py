@@ -9,6 +9,10 @@ Reglas, en orden:
    Las etiquetas genéricas (NOMBRE, CURP, VIGENCIA, ESTADOS UNIDOS MEXICANOS...) también las traen
    licencias y pasaportes: sólo suman puntaje, no bastan solas.
 3. Puntaje total (exclusivas +3, genéricas +1) ≥ `ine_min_senales`.
+
+Sólo la regla 1 rechaza antes del VLM. Si fallan la 2 o la 3 el OCR simplemente no vio nada
+(copia tenue, credencial inclinada o chica): el pipeline deja que el VLM la lea y rechaza al
+final si tampoco él encuentra encabezado, MRZ ni clave de elector válida.
 """
 
 import re
@@ -64,6 +68,9 @@ class Veredicto:
     puntaje: int
     senales: list[str] = field(default_factory=list)
     motivo: str | None = None
+    # Texto de OTRO documento (licencia, pasaporte...): rechazo seguro sin gastar el VLM.
+    # Sin esto, "no es INE" sólo significa que el OCR no encontró señales: el VLM aún puede verla.
+    otro_documento: str | None = None
 
 
 def _mexican_like(country: str) -> bool:
@@ -95,7 +102,7 @@ def evaluate(page_lines: list[list[Line]], front_ancla: bool, mrz_mex: bool, min
 
     other = other_document(all_lines, mrz_mex)
     if other:
-        return Veredicto(False, 0, [], f"No es una credencial INE: parece {other}")
+        return Veredicto(False, 0, [], f"No es una credencial INE: parece {other}", otro_documento=other)
 
     exclusive: set[str] = set()
     generic: set[str] = set()

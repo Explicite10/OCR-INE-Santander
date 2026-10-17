@@ -34,7 +34,10 @@ class Merger:
     # ------------------------------------------------------------ utilidades
 
     def _check(self, regla: str, ok: bool | None, detalle: str | None = None) -> None:
+        """Registra una validación; si la regla ya existía se reemplaza (p. ej. al volver a
+        evaluar la fecha después de reconstruir un código)."""
         resultado = "no_aplica" if ok is None else ("ok" if ok else "falla")
+        self.checks = [c for c in self.checks if c.regla != regla]
         self.checks.append(Validacion(regla=regla, resultado=resultado, detalle=detalle))
 
     def _vlm(self, key: str) -> str | None:
@@ -64,6 +67,11 @@ class Merger:
         self._fix_enie()
         self._reconstruct_clave()
         self._reconstruct_curp()
+        if self.reconstructed:
+            # La lectura dañada ya votó fecha/sexo antes de reconstruirse: se vuelve a evaluar
+            # con el código reconstruido para que las validaciones no queden desactualizadas.
+            self._birthdate()
+            self._sex()
         self._address()
         self._section_and_dates()
         self._cross_checks()
@@ -144,10 +152,52 @@ class Merger:
             self.conf[name] = "media"
             return valids[0]
         if len(set(valids)) > 1:
+            # VLM y OCR leyeron dos códigos distintos y ambos con estructura válida (difieren en
+            # un carácter). Se desempata con fuentes independientes: fecha y sexo de la MRZ (con
+            # dígito verificador) y las letras que se derivan del nombre. Si exactamente uno
+            # cuadra con todo, se toma con confianza media; si no, queda en baja (lo decide una persona).
+            scored = {c: self._code_evidence(name, c) for c in set(valids)}
+            clean = [c for c, (ok, _) in scored.items() if ok]
+            if len(clean) == 1:
+                vlm_or_ocr = "vlm" if clean[0] == vlm_val else "ocr"
+                fails = [why for ok, whys in scored.values() if not ok for why in whys]
+                self._check(f"{name}_desempate", True,
+                            f"se tomó la lectura del {vlm_or_ocr}; la otra no cuadra con {', '.join(fails)}")
+                self.conf[name] = "media"
+                return clean[0]
             self.conf[name] = "baja"
             return self._consistent(valids) or valids[0]
         self.conf[name] = "baja"
         return cands[0] if cands else None
+
+    def _code_evidence(self, name: str, code: str) -> tuple[bool, list[str]]:
+        """¿El código cuadra con la MRZ validada y con el nombre? (ok, [lo que no cuadra])."""
+        fails: list[str] = []
+        n = self.datos.nombre
+        if name == "curp":
+            date_, sex = code[4:10], code[10]
+            if n.apellido_paterno and n.nombres:
+                exp = v.curp_name_prefix(n.apellido_paterno, n.apellido_materno, n.nombres)
+                if exp and (exp[0] != code[0] or exp[2:] != code[2:4]):
+                    fails.append("nombre")
+                cons = v.curp_inner_consonants(n.apellido_paterno, n.apellido_materno, n.nombres)
+                if cons and cons != code[13:16]:
+                    fails.append("consonantes del nombre")
+        else:
+            date_, sex = code[6:12], code[14]
+            if n.apellido_paterno and n.nombres:
+                exp = v.clave_name_prefix(n.apellido_paterno, n.apellido_materno, n.nombres)
+                if exp and exp != code[:6]:
+                    fails.append("nombre")
+            if self.datos.curp and v.curp_valid(self.datos.curp):
+                if v.CURP_STATE_TO_CODE.get(self.datos.curp[11:13], code[12:14]) != code[12:14]:
+                    fails.append("estado de la CURP")
+        if self._mrz_check("mrz_fecha_nacimiento") and self.mrz.fecha_nacimiento:
+            if self.mrz.fecha_nacimiento.strftime("%y%m%d") != date_:
+                fails.append("fecha de la MRZ")
+        if self.mrz and self.mrz.sexo and self._mrz_check("mrz_compuesto") and self.mrz.sexo != sex:
+            fails.append("sexo de la MRZ")
+        return not fails, fails
 
     def _consistent(self, options: list[str]) -> str | None:
         """Entre dos códigos válidos, elige el que coincide con la fecha/sexo de la MRZ."""
@@ -435,21 +485,26 @@ class Merger:
     def _cross_checks(self) -> None:
         d = self.datos
         n = d.nombre
+        # En el detalle se indica QUÉ parte del nombre no cuadra (paterno / materno / nombre):
+        # el diagnóstico del lote lo recoge sin exponer datos personales.
         if d.curp and v.curp_valid(d.curp) and n.apellido_paterno and n.nombres:
             exp = v.curp_name_prefix(n.apellido_paterno, n.apellido_materno, n.nombres)
             # Las primeras 4 letras pueden cambiar por palabras altisonantes: se comparan inicial y nombre
             ok = exp is not None and exp[0] == d.curp[0] and exp[2:] == d.curp[2:4]
-            self._check("curp_vs_nombre", ok, None if ok else f"esperado {exp}, curp {d.curp[:4]}")
+            self._check("curp_vs_nombre", ok, None if ok else
+                        f"esperado {exp}, curp {d.curp[:4]} ({_differs(exp, d.curp[:4], ('paterno', 'paterno', 'materno', 'nombre'))})")
             if not ok and self.conf.get("nombre") == "alta":
                 self.conf["nombre"] = "media"
         if d.clave_elector and v.clave_valid(d.clave_elector) and n.apellido_paterno and n.nombres:
             exp = v.clave_name_prefix(n.apellido_paterno, n.apellido_materno, n.nombres)
             ok = exp == d.clave_elector[:6]
-            self._check("clave_elector_vs_nombre", ok, None if ok else f"esperado {exp}, clave {d.clave_elector[:6]}")
+            self._check("clave_elector_vs_nombre", ok, None if ok else
+                        f"esperado {exp}, clave {d.clave_elector[:6]} ({_differs(exp, d.clave_elector[:6], ('paterno',) * 2 + ('materno',) * 2 + ('nombre',) * 2)})")
         if d.curp and v.curp_valid(d.curp) and n.apellido_paterno and n.nombres:
             exp = v.curp_inner_consonants(n.apellido_paterno, n.apellido_materno, n.nombres)
             ok = exp == d.curp[13:16]
-            self._check("curp_consonantes_vs_nombre", ok, None if ok else f"esperado {exp}, curp {d.curp[13:16]}")
+            self._check("curp_consonantes_vs_nombre", ok, None if ok else
+                        f"esperado {exp}, curp {d.curp[13:16]} ({_differs(exp, d.curp[13:16], ('paterno', 'materno', 'nombre'))})")
         if d.curp and d.clave_elector and v.curp_valid(d.curp) and v.clave_valid(d.clave_elector):
             ok = d.curp[4:10] == d.clave_elector[6:12] and d.curp[10] == d.clave_elector[14]
             self._check("curp_vs_clave_elector", ok, "fecha y sexo")
@@ -477,9 +532,18 @@ class Merger:
         return None
 
 
+def _differs(expected: str | None, got: str, parts: tuple[str, ...]) -> str:
+    """'difiere: materno, nombre' — qué partes del nombre no cuadran con el código."""
+    if not expected:
+        return "difiere: sin nombre"
+    bad = list(dict.fromkeys(p for e, g, p in zip(expected, got, parts) if e != g))
+    return "difiere: " + ", ".join(bad or ["?"])
+
+
 # --------------------------------------------------------------- domicilio
 
 _CP = re.compile(r"\b(\d{5})\b\s*$")
+_CP_ANY = re.compile(r"(?<![\d-])(\d{5})(?![\d-])")  # "C.P. 50000 TENANCINGO": el CP en medio del renglón
 
 
 def _state_from(text: str) -> tuple[str | None, str | None]:
@@ -515,16 +579,17 @@ def parse_address(lines: list[str]) -> Domicilio:
             if estado:
                 dom.municipio, dom.estado, dom.estado_abreviatura = parts[0].strip(" ,."), estado, abbr
     body = lines[:-1] if dom.estado else lines
-    for i in range(len(body) - 1, -1, -1):
-        m = _CP.search(body[i])
-        if m:
-            dom.codigo_postal = m.group(1)
-            dom.colonia = body[i][: m.start()].strip(" ,.-") or None
-            dom.calle = " ".join(body[:i]) or None
-            break
-    else:
-        dom.calle = " ".join(body[:1]) or None
-        dom.colonia = " ".join(body[1:]) or None
+    for pattern in (_CP, _CP_ANY):  # primero el CP al final del renglón (lo normal), luego en cualquier parte
+        for i in range(len(body) - 1, -1, -1):
+            m = pattern.search(body[i])
+            if m:
+                dom.codigo_postal = m.group(1)
+                rest = (body[i][: m.start()] + " " + body[i][m.end():]).strip(" ,.-")
+                dom.colonia = re.sub(r"\s+", " ", re.sub(r"\bC\.?\s?P\.?(?!\w)", "", rest)).strip(" ,.-") or None
+                dom.calle = " ".join(body[:i]) or None
+                return dom
+    dom.calle = " ".join(body[:1]) or None
+    dom.colonia = " ".join(body[1:]) or None
     return dom
 
 

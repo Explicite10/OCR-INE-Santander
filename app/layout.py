@@ -8,6 +8,10 @@ recuadros de las fotocopias lo confunden), se usa el texto que encuentra el OCR:
 
 Con la posición y el ancho de esas anclas se estima el rectángulo de la tarjeta
 (proporciones medidas sobre credenciales reales) y se agrega un margen.
+
+Si en ninguna página aparece un ancla (credencial inclinada, muy pequeña o copia
+muy tenue), el pipeline pide al modelo de visión que ubique las credenciales y
+`analyze_boxes` repite la búsqueda de anclas dentro de esos recortes.
 """
 
 import re
@@ -30,6 +34,14 @@ FRONT_TOP_OFFSET = 0.077  # fracción del alto de tarjeta por encima del encabez
 BACK_W_PER_MRZ = 1.128
 BACK_LEFT_OFFSET = 0.031
 BACK_BOTTOM_OFFSET = 0.089
+
+# Ancho (px) al que se lleva un recorte del localizador antes de pasarle el OCR:
+# en una página completa a 250 dpi la credencial mide ~850 px y el OCR lee bien;
+# si el localizador la encontró más chica, se amplía.
+CROP_MIN_WIDTH = 1100
+
+_ROTATIONS = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180, 270: cv2.ROTATE_90_COUNTERCLOCKWISE}
+
 
 @dataclass
 class Box:
@@ -55,7 +67,7 @@ class Side:
     box: Box
     image: np.ndarray
     lines: list[Line]  # líneas OCR dentro del recorte, ordenadas de arriba abajo
-    method: str  # "ancla" | "pagina_completa"
+    method: str  # "ancla" | "localizador" | "pagina_completa"
     mrz_lines: list[str] = field(default_factory=list)
 
 
@@ -67,6 +79,12 @@ class Layout:
     pages: int
     warnings: list[str]
     page_lines: list[list[Line]] = field(default_factory=list)  # OCR de cada página (ya rotada si aplicó)
+    page_images: list[np.ndarray] = field(default_factory=list)  # páginas (ya rotadas si aplicó)
+
+    @property
+    def anchored(self) -> bool:
+        """Las dos caras se ubicaron con sus anclas (encabezado y MRZ)."""
+        return bool(self.front and self.front.method == "ancla" and self.back and self.back.method == "ancla")
 
 
 def _n(t: str) -> str:
@@ -202,31 +220,44 @@ def _mostly_vertical(lines: list[Line]) -> bool:
     return sum(l.h > 1.5 * l.w for l in long) > sum(l.w > 1.5 * l.h for l in long)
 
 
+def _locate_with_rotations(img: np.ndarray, lines: list[Line], ocr_read):
+    """Busca anclas en la imagen y, si no hay, en sus giros (90°, 180°, 270°).
+
+    El giro más probable va primero (texto vertical → 90° en ambos sentidos; si no, 180°);
+    después se prueban los que falten, porque una credencial de lado lee tan mal que el
+    OCR a veces no deja claro si el texto es vertical. Devuelve (img, lines, (mrz, back, front), rotated).
+    """
+    found = _locate(img, lines)
+    if found[0] or found[2] or not lines:
+        return img, lines, found, False
+    likely = [90, 270] if _mostly_vertical(lines) else [180]
+    for deg in likely + [d for d in (90, 180, 270) if d not in likely]:
+        r_img = cv2.rotate(img, _ROTATIONS[deg])
+        r_lines = ocr_read(r_img)
+        r = _locate(r_img, r_lines)
+        if r[0] or r[2]:
+            return r_img, r_lines, r, True
+    return img, lines, found, False
+
+
 def analyze(pages: list[np.ndarray], ocr_read) -> Layout:
     """Busca anverso y reverso en las páginas. `ocr_read(img) -> list[Line]`."""
     front: Side | None = None
     back: Side | None = None
     warnings: list[str] = []
     rotated = False
-    page_cache: list[tuple[np.ndarray, list[Line]]] = []
     page_lines: list[list[Line]] = []
+    page_images: list[np.ndarray] = []
 
     for i, page in enumerate(pages):
-        img, lines = page, ocr_read(page)
-        page_cache.append((img, lines))
-        mrz, back_box, front_box = _locate(img, lines)
-        if not (mrz or front_box) and len(lines) >= 3:
-            # Página girada: si el texto es vertical se prueban 90° en ambos sentidos, si no, 180°.
-            tries = ((cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE) if _mostly_vertical(lines)
-                     else (cv2.ROTATE_180,))
-            for rot in tries:
-                r_img = cv2.rotate(page, rot)
-                r_lines = ocr_read(r_img)
-                r = _locate(r_img, r_lines)
-                if r[0] or r[2]:
-                    img, lines, (mrz, back_box, front_box) = r_img, r_lines, r
-                    rotated = True
-                    break
+        if front and back:
+            # Ya se tienen las dos caras: las páginas restantes sólo se guardan (sin OCR)
+            page_images.append(page)
+            page_lines.append([])
+            continue
+        img, lines, (mrz, back_box, front_box), rot = _locate_with_rotations(page, ocr_read(page), ocr_read)
+        rotated = rotated or rot
+        page_images.append(img)
         page_lines.append(lines)
 
         if back is None and back_box:
@@ -234,18 +265,94 @@ def analyze(pages: list[np.ndarray], ocr_read) -> Layout:
                         mrz_lines=[l.text for l in mrz])
         if front is None and front_box:
             front = Side(i, front_box, _crop(img, front_box), _lines_in(lines, front_box), "ancla")
+
+    layout = Layout(front, back, rotated, len(pages), warnings, page_lines, page_images)
+    _fill_missing(layout)
+    return layout
+
+
+def _fill_missing(layout: Layout) -> None:
+    """Sin ancla: se manda la página completa al VLM para no perder el documento."""
+    if layout.front is None and layout.page_images:
+        img, lines = layout.page_images[0], layout.page_lines[0]
+        layout.front = Side(0, Box(0, 0, img.shape[1], img.shape[0]), img, lines, "pagina_completa")
+        layout.warnings.append("No se localizó el anverso; se analizó la página completa")
+    if layout.back is None and layout.page_images:
+        idx = 1 if len(layout.page_images) > 1 else 0
+        img, lines = layout.page_images[idx], layout.page_lines[idx]
+        layout.back = Side(idx, Box(0, 0, img.shape[1], img.shape[0]), img, lines, "pagina_completa")
+        layout.warnings.append("No se localizó la MRZ del reverso; se analizó la página completa")
+
+
+@dataclass
+class CardBox:
+    """Credencial ubicada por el modelo de visión en una página."""
+    page: int
+    box: Box
+    lado: str  # "anverso" | "reverso" | "desconocido"
+    rotacion: int = 0  # grados en sentido horario para enderezarla
+
+
+def _box_sane(box: Box, w: int, h: int) -> bool:
+    b = box.clip(w, h)
+    frac = b.area / max(1, w * h)
+    return 0.02 <= frac <= 0.95 and (b.x1 - b.x0) >= 80 and (b.y1 - b.y0) >= 50
+
+
+def analyze_boxes(layout: Layout, cards: list[CardBox], ocr_read) -> Layout:
+    """Reemplaza las caras sin ancla por los recortes del localizador.
+
+    Cada recorte se endereza, se amplía si es chico y se vuelve a leer con el OCR:
+    si ahí aparecen las anclas, la cara queda como "ancla" (con las líneas y la MRZ de
+    siempre); si no, el recorte se usa tal cual como "localizador" (mejor que la página
+    completa). Un recorte que no pasa las comprobaciones de tamaño se ignora.
+    """
+    front = layout.front if layout.front and layout.front.method == "ancla" else None
+    back = layout.back if layout.back and layout.back.method == "ancla" else None
+    fallback_front = fallback_back = None
+    used = 0
+
+    for card in cards:
         if front and back:
             break
+        if not (0 <= card.page < len(layout.page_images)):
+            continue
+        page = layout.page_images[card.page]
+        h, w = page.shape[:2]
+        if not _box_sane(card.box, w, h):
+            continue
+        box = card.box.clip(w, h)
+        crop = _crop(page, box)
+        if card.rotacion in _ROTATIONS:
+            crop = cv2.rotate(crop, _ROTATIONS[card.rotacion])
+        ch, cw = crop.shape[:2]
+        if cw < CROP_MIN_WIDTH:
+            scale = CROP_MIN_WIDTH / cw
+            crop = cv2.resize(crop, (int(cw * scale), int(ch * scale)), interpolation=cv2.INTER_CUBIC)
+        used += 1
+        img, lines, (mrz, back_box, front_box), _ = _locate_with_rotations(crop, ocr_read(crop), ocr_read)
+        layout.page_lines[card.page] = layout.page_lines[card.page] + lines
+        if back is None and back_box:
+            back = Side(card.page, back_box, _crop(img, back_box), _lines_in(lines, back_box), "ancla",
+                        mrz_lines=[l.text for l in mrz])
+        if front is None and front_box:
+            front = Side(card.page, front_box, _crop(img, front_box), _lines_in(lines, front_box), "ancla")
+        if back_box or front_box:
+            continue
+        whole = Side(card.page, Box(0, 0, img.shape[1], img.shape[0]), img, lines, "localizador")
+        if card.lado == "reverso" and fallback_back is None:
+            fallback_back = whole
+        elif card.lado == "anverso" and fallback_front is None:
+            fallback_front = whole
+        elif card.lado == "desconocido":
+            if fallback_front is None:
+                fallback_front = whole
+            elif fallback_back is None:
+                fallback_back = whole
 
-    # Sin ancla: se manda la página completa al VLM para no perder el documento.
-    if front is None and page_cache:
-        img, lines = page_cache[0]
-        front = Side(0, Box(0, 0, img.shape[1], img.shape[0]), img, lines, "pagina_completa")
-        warnings.append("No se localizó el anverso; se analizó la página completa")
-    if back is None and page_cache:
-        idx = 1 if len(page_cache) > 1 else 0
-        img, lines = page_cache[idx]
-        back = Side(idx, Box(0, 0, img.shape[1], img.shape[0]), img, lines, "pagina_completa")
-        warnings.append("No se localizó la MRZ del reverso; se analizó la página completa")
-
-    return Layout(front, back, rotated, len(pages), warnings, page_lines)
+    layout.front, layout.back = front or fallback_front, back or fallback_back
+    layout.warnings = [w for w in layout.warnings if not w.startswith("No se localizó")]
+    if used:
+        layout.warnings.append(f"Credencial ubicada por el modelo de visión ({used} recorte(s))")
+    _fill_missing(layout)
+    return layout
