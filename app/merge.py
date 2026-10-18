@@ -498,12 +498,12 @@ class Merger:
                 self.conf["nombre"] = "media"
         if d.clave_elector and v.clave_valid(d.clave_elector) and n.apellido_paterno and n.nombres:
             exp = v.clave_name_prefix(n.apellido_paterno, n.apellido_materno, n.nombres)
-            alt = v.clave_name_prefix(n.apellido_paterno, n.apellido_materno, n.nombres, skip_common_first=True)
+            alt = v.clave_name_prefix(n.apellido_paterno, n.apellido_materno, n.nombres, skip_common_first=False)
             got = d.clave_elector[:6]
             ok = got in (exp, alt)
             detalle = None
             if ok and got != exp:
-                detalle = "cuadra saltando MARIA/JOSE"
+                detalle = "cuadra sin saltar MARIA/JOSE"
             elif not ok:
                 detalle = f"esperado {exp}, clave {got} ({_differs(exp, got, ('paterno',) * 2 + ('materno',) * 2 + ('nombre',) * 2)})"
             self._check("clave_elector_vs_nombre", ok, detalle)

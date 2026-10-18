@@ -148,9 +148,14 @@ def test_codigo_postal_en_medio_del_renglon():
     assert dom.codigo_postal == "06000" and dom.colonia == "COL CENTRO"
 
 
-def test_clave_cuadra_saltando_maria_jose_se_registra():
-    clave = "PRLPGD85031209H400"  # nombre MARIA GUADALUPE -> "GD" (regla tipo CURP)
+def test_clave_salta_maria_jose_como_la_curp():
+    clave = "PRLPGD85031209H400"  # nombre MARIA GUADALUPE -> "GD"
     mg = run(vlm_front(nombres="MARIA GUADALUPE", clave_elector=clave),
              ocr_front(nombre_lineas=["PEREZ", "LOPEZ", "MARIA GUADALUPE"], clave_elector=clave))
     d = next(c for c in mg.checks if c.regla == "clave_elector_vs_nombre")
-    assert d.resultado == "ok" and "saltando" in d.detalle
+    assert d.resultado == "ok" and d.detalle is None
+    # La variante sin saltar ("MR") se sigue aceptando, pero queda registrada
+    mg = run(vlm_front(nombres="MARIA GUADALUPE", clave_elector="PRLPMR85031209H400"),
+             ocr_front(nombre_lineas=["PEREZ", "LOPEZ", "MARIA GUADALUPE"], clave_elector="PRLPMR85031209H400"))
+    d = next(c for c in mg.checks if c.regla == "clave_elector_vs_nombre")
+    assert d.resultado == "ok" and "sin saltar" in d.detalle

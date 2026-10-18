@@ -118,7 +118,7 @@ def diagnose(r: dict) -> dict:
         if c and c["resultado"] == "falla" and m:
             difs.append(f"{regla.split('_vs_')[0]}: {m.group(1)}")
     row["nombre_vs_codigos_difiere"] = " | ".join(difs) or None
-    row["clave_salta_maria_jose"] = "cuadra saltando" in ((checks.get("clave_elector_vs_nombre") or {}).get("detalle") or "")
+    row["clave_sin_saltar_maria_jose"] = "sin saltar" in ((checks.get("clave_elector_vs_nombre") or {}).get("detalle") or "")
     desempates = [c["detalle"] for k, c in checks.items() if k.endswith("_desempate")]
     row["desempates"] = " | ".join(desempates) or None
     for etapa, ms in tiempos.items():
