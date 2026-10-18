@@ -189,8 +189,8 @@ def test_localizador_recorta_y_encuentra_la_mrz(with_vlm):
     l1, l2, l3 = make_mrz()
 
     def read(img):
-        if img.shape[1] >= 1500:  # página completa: nada legible
-            return [L("x")]
+        if img.shape[1] >= 1500:  # página completa: sólo texto suelto, sin anclas
+            return [L("BANCO SANTANDER"), L("COPIA FIEL", 40)]
         return [L(l1, 300), L(l2, 325), L(l3, 350)]  # recorte ampliado: MRZ
 
     with_vlm(read)
@@ -200,3 +200,17 @@ def test_localizador_recorta_y_encuentra_la_mrz(with_vlm):
     assert r.meta.recorte_reverso == "ancla" and r.datos.cic == "123456789"
     assert "mrz_mexicana" in r.meta.senales_ine
     assert any(w.startswith("Localizador:") for w in r.advertencias)
+
+
+def test_hoja_en_blanco_se_rechaza_sin_gastar_vlm(with_vlm):
+    with_vlm(lambda img: [])
+    vlm = FakeVlm()
+    r = asyncio.run(pipeline.process([_page()], vlm, "blanco.pdf"))
+    assert r.estado == "rechazado" and "en blanco" in r.error
+    assert vlm.locate_calls == 0 and "vlm_anverso" not in r.meta.tiempos_ms
+
+
+def test_casi_vacia_tambien_se_rechaza(with_vlm):
+    with_vlm(lambda img: [L("."), L("ab", 40)])  # manchas que el OCR lee como 2 caracteres
+    r = asyncio.run(pipeline.process([_page()], FakeVlm(), "manchas.pdf"))
+    assert r.estado == "rechazado" and "en blanco" in r.error

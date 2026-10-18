@@ -43,6 +43,7 @@ cada recorte se endereza y amplía, y se repite el OCR ahí; `meta.recorte_anver
 dicen cómo se obtuvo cada cara: `ancla`, `localizador` o `pagina_completa`.
 
 **Sólo credenciales INE mexicanas.** Con el texto del OCR, antes de llamar al modelo de visión:
+0. Hoja en blanco o sin texto legible (menos de 10 letras/dígitos en todo el OCR) → `rechazado` de inmediato.
 1. Texto de otro documento (LICENCIA PARA CONDUCIR, PASAPORTE, RFC, TIPO DE SANGRE, IMSS, INM, cédula,
    acta…), la MRZ de pasaporte (`P<MEX…`) o la de una credencial de otro país (`IDUSA…`) → `rechazado`
    de inmediato, sin gastar GPU.

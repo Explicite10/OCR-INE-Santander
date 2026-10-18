@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import logging
+import re
 import time
 
 import numpy as np
@@ -18,6 +19,9 @@ from .schemas import Meta, ResultadoINE
 from .vlm import BACK_PROMPT, BACK_SCHEMA, FRONT_PROMPT, FRONT_SCHEMA, VlmClient, VlmError
 
 log = logging.getLogger(__name__)
+
+# Menos caracteres (letras y dígitos) que esto en todo el OCR = hoja en blanco
+MIN_CARACTERES_OCR = 10
 
 
 def _ms(t: float) -> int:
@@ -71,6 +75,15 @@ async def process(files: list[bytes], vlm: VlmClient | None, filename: str | Non
     #     Sin VLM tampoco hay quien pueda ver lo que el OCR no vio: se rechaza desde aquí.
     veredicto = gate_eval()
     vlm_on = vlm is not None and s.vlm_enabled
+    # Hoja en blanco (o sin nada legible): el OCR no encontró texto en ninguna página. Una INE,
+    # aun muy tenue o de lado, deja decenas de caracteres; no tiene caso gastar el VLM.
+    texto = sum(len(re.sub(r"[^A-Z0-9]", "", l.text.upper())) for lines in layout.page_lines for l in lines)
+    if s.rechazar_no_ine and s.ocr_enabled and texto < MIN_CARACTERES_OCR:
+        motivo = "No es una credencial INE: el documento está en blanco o no tiene texto legible"
+        log.info("Documento rechazado: %s", motivo)
+        return ResultadoINE(archivo=filename, estado="rechazado", error=motivo,
+                            advertencias=list(layout.warnings),
+                            meta=_meta(s, times, t_start, layout, None, vlm, veredicto.senales))
     if s.rechazar_no_ine and s.ocr_enabled and (veredicto.otro_documento or (not vlm_on and not veredicto.es_ine)):
         log.info("Documento rechazado: %s", veredicto.motivo)
         return ResultadoINE(archivo=filename, estado="rechazado", error=veredicto.motivo,
