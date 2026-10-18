@@ -1,10 +1,8 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
 
 from . import pipeline
 from .config import get_settings
@@ -56,14 +54,6 @@ def check_api_key(x_api_key: str | None = Header(default=None)) -> None:
     expected = get_settings().api_key
     if expected and x_api_key != expected:
         raise HTTPException(status_code=401, detail="API key inválida")
-
-
-@app.get("/", include_in_schema=False)
-async def ui() -> FileResponse:
-    """Interfaz web para probar la extracción (se apaga con ENABLE_UI=false)."""
-    if not get_settings().enable_ui:
-        raise HTTPException(status_code=404)
-    return FileResponse(Path(__file__).parent / "static" / "index.html")
 
 
 @app.get("/health")

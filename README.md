@@ -80,15 +80,6 @@ cp .env.example .env
 
 ## Uso
 
-**Interfaz web de prueba**
-
-```bash
-.venv/bin/uvicorn app.main:app --port 8000
-```
-
-Abrir http://localhost:8000: arrastra uno o varios PDF/imágenes y verás los recortes
-detectados, los datos con su confianza, las validaciones y el JSON (copiar / descargar).
-
 **API**
 
 ```bash
@@ -132,7 +123,7 @@ Muestra la exactitud por campo y por nivel de confianza (lo clave: que `alta` se
 ## Servidor (Docker)
 
 Tres contenedores: **PostgreSQL** (historial), **Ollama** (modelo de visión) y **API**
-(FastAPI + PaddleOCR + interfaz). El único modelo de Ollama es **`qwen3-vl:8b-instruct`**
+(FastAPI + PaddleOCR). El único modelo de Ollama es **`qwen3-vl:8b-instruct`**
 y se descarga solo la primera vez (≈ 6 GB). Los modelos de PaddleOCR vienen dentro de la imagen.
 
 ```bash
@@ -142,7 +133,7 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build   #
 docker compose logs -f api      # esperar "Application startup complete"
 ```
 
-- API e interfaz: `http://SERVIDOR:18473` (puerto configurable con `API_PORT`).
+- API: `http://SERVIDOR:18473` (puerto configurable con `API_PORT`).
 - Ollama y PostgreSQL no se exponen fuera del servidor.
 - Los datos persisten en los volúmenes `ine-ocr_pg-data` y `ine-ocr_ollama-models`.
 - Requisitos: Docker con Compose v2; ~12 GB de RAM libres (sin GPU) o GPU con ≥ 10 GB de VRAM;

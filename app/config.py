@@ -54,7 +54,6 @@ class Settings(BaseSettings):
     # Número de documentos que se procesan a la vez dentro del proceso.
     max_concurrent_jobs: int = 2
     api_key: str | None = None  # si se define, se exige el header X-API-Key
-    enable_ui: bool = True  # página de prueba en "/"
     enable_docs: bool = True  # documentación interactiva en "/docs"
 
     # --- Base de datos (opcional) ---

@@ -76,3 +76,7 @@ def test_review(client):
 
 def test_health_reports_db(client):
     assert client.get("/health").json()["base_de_datos"] is True
+
+
+def test_sin_interfaz_web(client):
+    assert client.get("/").status_code == 404

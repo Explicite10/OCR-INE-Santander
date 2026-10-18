@@ -3,7 +3,7 @@
 #   Servidor SIN GPU:          docker compose up -d --build
 #   Servidor con GPU NVIDIA:   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 #
-# La API y la interfaz quedan en http://SERVIDOR:18473  (cambiar con API_PORT en .env).
+# La API queda en http://SERVIDOR:18473  (cambiar con API_PORT en .env).
 # Ollama y PostgreSQL NO se exponen fuera del servidor: sólo la API los ve por la red interna.
 
 name: ine-ocr
