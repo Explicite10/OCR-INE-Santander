@@ -199,4 +199,4 @@ def test_localizador_recorta_y_encuentra_la_mrz(with_vlm):
     assert r.estado != "rechazado"
     assert r.meta.recorte_reverso == "ancla" and r.datos.cic == "123456789"
     assert "mrz_mexicana" in r.meta.senales_ine
-    assert any("ubicada por el modelo" in w for w in r.advertencias)
+    assert any(w.startswith("Localizador:") for w in r.advertencias)

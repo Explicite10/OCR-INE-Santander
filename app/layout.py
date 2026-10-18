@@ -352,7 +352,8 @@ def analyze_boxes(layout: Layout, cards: list[CardBox], ocr_read) -> Layout:
 
     layout.front, layout.back = front or fallback_front, back or fallback_back
     layout.warnings = [w for w in layout.warnings if not w.startswith("No se localizó")]
-    if used:
-        layout.warnings.append(f"Credencial ubicada por el modelo de visión ({used} recorte(s))")
+    layout.warnings.append(
+        f"Localizador: {len(cards)} caja(s), {used} usable(s), "
+        f"{sum(s.method == 'ancla' for s in (layout.front, layout.back) if s)} con ancla")
     _fill_missing(layout)
     return layout

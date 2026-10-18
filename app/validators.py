@@ -177,9 +177,15 @@ def curp_name_prefix(paterno: str | None, materno: str | None, nombres: str | No
     return (p[0] + _first_inner(p, consonant=False) + (m[0] if m else "X") + n[0]).replace("Ñ", "X")
 
 
-def clave_name_prefix(paterno: str | None, materno: str | None, nombres: str | None) -> str | None:
-    """Las 6 letras de la clave de elector: inicial + primera consonante interna de cada parte."""
-    parts = [_main_word(paterno or ""), _main_word(materno or ""), _main_word(nombres or "")]
+def clave_name_prefix(paterno: str | None, materno: str | None, nombres: str | None,
+                      skip_common_first: bool = False) -> str | None:
+    """Las 6 letras de la clave de elector: inicial + primera consonante interna de cada parte.
+
+    `skip_common_first` ignora MARIA / JOSE como primer nombre (regla de la CURP); el lote dirá
+    si la INE también lo hace: las validaciones registran con cuál variante cuadró.
+    """
+    parts = [_main_word(paterno or ""), _main_word(materno or ""),
+             _main_word(nombres or "", skip_common_first=skip_common_first)]
     if not parts[0] or not parts[2]:
         return None
     out = ""

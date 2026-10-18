@@ -94,6 +94,8 @@ def diagnose(r: dict) -> dict:
         "validaciones_falla": ";".join(c["regla"] for c in r.get("validaciones") or [] if c["resultado"] == "falla"),
         "advertencias": ";".join(a.split("(")[0].strip() for a in r.get("advertencias") or []),
         "error_tipo": (r.get("error") or "").split(":")[0] or None,
+        # Motivo completo del rechazo: texto fijo del sistema (p. ej. "parece pasaporte (ESP)"), sin datos
+        "motivo_rechazo": (r.get("error") or None) if r.get("estado") == "rechazado" else None,
         "senales_ine": ";".join(meta.get("senales_ine") or []),
         "paginas": meta.get("paginas"),
         "rotado": meta.get("rotado"),
@@ -116,6 +118,7 @@ def diagnose(r: dict) -> dict:
         if c and c["resultado"] == "falla" and m:
             difs.append(f"{regla.split('_vs_')[0]}: {m.group(1)}")
     row["nombre_vs_codigos_difiere"] = " | ".join(difs) or None
+    row["clave_salta_maria_jose"] = "cuadra saltando" in ((checks.get("clave_elector_vs_nombre") or {}).get("detalle") or "")
     desempates = [c["detalle"] for k, c in checks.items() if k.endswith("_desempate")]
     row["desempates"] = " | ".join(desempates) or None
     for etapa, ms in tiempos.items():

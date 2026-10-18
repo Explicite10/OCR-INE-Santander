@@ -90,6 +90,8 @@ async def process(files: list[bytes], vlm: VlmClient | None, filename: str | Non
             if cards:
                 layout = await asyncio.to_thread(analyze_boxes, layout, cards, ocr_read)
                 veredicto = gate_eval()
+            else:
+                layout.warnings.append("El localizador no vio ninguna credencial en la página")
         except VlmError as e:
             log.error("Localizador falló: %s", e)
             layout.warnings.append("El localizador de credenciales falló; se analizó la página completa")

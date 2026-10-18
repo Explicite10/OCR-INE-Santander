@@ -59,7 +59,7 @@ def test_analyze_boxes_amplia_el_recorte_y_vuelve_a_buscar_anclas():
     assert lay.back.method == "ancla" and lay.back.mrz_lines[0].startswith("IDMEX")
     assert ly.CROP_MIN_WIDTH in widths
     assert lay.front.method == "pagina_completa"  # el anverso no apareció: sigue la página completa
-    assert any("ubicada por el modelo" in w for w in lay.warnings)
+    assert any(w.startswith("Localizador:") for w in lay.warnings)
 
 
 def test_analyze_boxes_recorte_sin_anclas_se_usa_como_localizador():

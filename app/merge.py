@@ -186,8 +186,9 @@ class Merger:
         else:
             date_, sex = code[6:12], code[14]
             if n.apellido_paterno and n.nombres:
-                exp = v.clave_name_prefix(n.apellido_paterno, n.apellido_materno, n.nombres)
-                if exp and exp != code[:6]:
+                exps = {v.clave_name_prefix(n.apellido_paterno, n.apellido_materno, n.nombres, skip)
+                        for skip in (False, True)} - {None}
+                if exps and code[:6] not in exps:
                     fails.append("nombre")
             if self.datos.curp and v.curp_valid(self.datos.curp):
                 if v.CURP_STATE_TO_CODE.get(self.datos.curp[11:13], code[12:14]) != code[12:14]:
@@ -497,9 +498,15 @@ class Merger:
                 self.conf["nombre"] = "media"
         if d.clave_elector and v.clave_valid(d.clave_elector) and n.apellido_paterno and n.nombres:
             exp = v.clave_name_prefix(n.apellido_paterno, n.apellido_materno, n.nombres)
-            ok = exp == d.clave_elector[:6]
-            self._check("clave_elector_vs_nombre", ok, None if ok else
-                        f"esperado {exp}, clave {d.clave_elector[:6]} ({_differs(exp, d.clave_elector[:6], ('paterno',) * 2 + ('materno',) * 2 + ('nombre',) * 2)})")
+            alt = v.clave_name_prefix(n.apellido_paterno, n.apellido_materno, n.nombres, skip_common_first=True)
+            got = d.clave_elector[:6]
+            ok = got in (exp, alt)
+            detalle = None
+            if ok and got != exp:
+                detalle = "cuadra saltando MARIA/JOSE"
+            elif not ok:
+                detalle = f"esperado {exp}, clave {got} ({_differs(exp, got, ('paterno',) * 2 + ('materno',) * 2 + ('nombre',) * 2)})"
+            self._check("clave_elector_vs_nombre", ok, detalle)
         if d.curp and v.curp_valid(d.curp) and n.apellido_paterno and n.nombres:
             exp = v.curp_inner_consonants(n.apellido_paterno, n.apellido_materno, n.nombres)
             ok = exp == d.curp[13:16]

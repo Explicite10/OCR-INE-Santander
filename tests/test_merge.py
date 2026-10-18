@@ -146,3 +146,11 @@ def test_codigo_postal_en_medio_del_renglon():
     assert dom.codigo_postal == "06000" and dom.colonia == "COL CENTRO" and dom.estado == "CIUDAD DE MEXICO"
     dom = parse_address(["C REFORMA 10", "COL CENTRO 06000", "CUAUHTEMOC, CDMX"])
     assert dom.codigo_postal == "06000" and dom.colonia == "COL CENTRO"
+
+
+def test_clave_cuadra_saltando_maria_jose_se_registra():
+    clave = "PRLPGD85031209H400"  # nombre MARIA GUADALUPE -> "GD" (regla tipo CURP)
+    mg = run(vlm_front(nombres="MARIA GUADALUPE", clave_elector=clave),
+             ocr_front(nombre_lineas=["PEREZ", "LOPEZ", "MARIA GUADALUPE"], clave_elector=clave))
+    d = next(c for c in mg.checks if c.regla == "clave_elector_vs_nombre")
+    assert d.resultado == "ok" and "saltando" in d.detalle
