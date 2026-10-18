@@ -52,8 +52,10 @@ dicen cómo se obtuvo cada cara: `ancla`, `localizador` o `pagina_completa`.
    (CURP, NOMBRE, VIGENCIA…, que también traen licencias y pasaportes). Si no hay ninguna, el OCR no vio
    la credencial pero el modelo de visión todavía puede verla: el documento sigue (sólo con el VLM
    apagado se rechaza aquí).
-3. Si el modelo de visión ya leyó la imagen y aun así no hay encabezado, MRZ válida ni clave de elector
-   con estructura válida, se rechaza (el CURP no cuenta: lo traen otros documentos).
+3. Si el modelo de visión ya leyó la imagen y aun así no hay **datos** de una INE —MRZ con CIC real y
+   algún dígito verificador, clave de elector válida, o (sólo junto al encabezado) CURP válida— se rechaza.
+   El encabezado solo no basta: una carta o formato que dice "CREDENCIAL PARA VOTAR" también lo trae.
+   Campos de MRZ de puro relleno (`<<<<<<`, cuyo dígito verificador es 0) no cuentan como válidos.
 
 El resultado lleva `estado = "rechazado"` y el motivo en `error`.
 Se apaga con `RECHAZAR_NO_INE=false`.

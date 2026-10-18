@@ -89,3 +89,12 @@ def test_best_prefers_valid():
     bad = mrz.parse([l1, l2[:3] + "77" + l2[5:], l3])
     assert mrz.best(bad, good) is good
     assert mrz.best(None, None) is None
+
+
+def test_campos_de_puro_relleno_no_validan():
+    """El VLM, ante una hoja sin credencial, puede devolver renglones de relleno con dígitos 0:
+    el dígito verificador de "<<<<<<" es 0 y antes 'cuadraba'."""
+    r = mrz.parse(["IDMEX<<<<<<<<<0<<<<<<<<<<<<<<<<", "<<<<<<0<<<<<<<0MEX<<<<<<<<<<<0", "PEREZ<<JUAN"])
+    assert r.n_validos == 0 and not r.valido and r.cic is None
+    r = mrz.parse(["IDMEX0000000000<<<<<<<<<<<<<<<", "0000000<0000000MEX<<<<<<<<<<<0", ""])
+    assert r.n_validos == 0

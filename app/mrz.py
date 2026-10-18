@@ -168,6 +168,11 @@ def _verify(l1: str, l2: str, start: int, length: int, line: int, nombre: str,
     lines = [l1, l2]
     src = lines[line]
     value, expected = src[start:start + length], src[start + length]
+    if not _has_content(value, nombre):
+        # Un campo vacío ("<<<<<<") da dígito verificador 0: el VLM, ante una hoja sin credencial,
+        # devuelve renglones de puro relleno que "cuadran". Sin contenido real no hay validación.
+        checks.append(MrzCheck(nombre, False))
+        return l1, l2
     if expected.isdigit() and str(check_digit(value)) == expected:
         checks.append(MrzCheck(nombre, True))
         return l1, l2
@@ -189,11 +194,19 @@ def _verify(l1: str, l2: str, start: int, length: int, line: int, nombre: str,
     return l1, l2
 
 
+def _has_content(value: str, nombre: str) -> bool:
+    """El campo trae dígitos de verdad y no sólo relleno ni ceros. (Una fecha con un dígito mal
+    leído, p. ej. mes 13, sí cuenta: la reparación con el dígito verificador la corrige después.)"""
+    return value.isdigit() and value.strip("0") != ""
+
+
 def _composite(l1: str, l2: str) -> str:
     return l1[5:30] + l2[0:7] + l2[8:15] + l2[18:29]
 
 
 def _composite_ok(l1: str, l2: str) -> bool:
+    if not (_has_content(l1[5:14], "mrz_cic") and _has_content(l2[0:6], "mrz_fecha_nacimiento")):
+        return False  # sin CIC ni fecha reales el compuesto "cuadra" con puro relleno
     return l2[29].isdigit() and str(check_digit(_composite(l1, l2))) == l2[29]
 
 

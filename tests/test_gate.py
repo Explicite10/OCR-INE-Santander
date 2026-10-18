@@ -214,3 +214,28 @@ def test_casi_vacia_tambien_se_rechaza(with_vlm):
     with_vlm(lambda img: [L("."), L("ab", 40)])  # manchas que el OCR lee como 2 caracteres
     r = asyncio.run(pipeline.process([_page()], FakeVlm(), "manchas.pdf"))
     assert r.estado == "rechazado" and "en blanco" in r.error
+
+
+class FakeVlmRelleno(FakeVlm):
+    """Hoja sin credencial: el VLM devuelve una MRZ de puro relleno y un anverso vacío."""
+
+    async def extract(self, img, prompt, schema, max_side=-1):
+        if "mrz_linea1" in schema["properties"]:
+            return {"mrz_linea1": "IDMEX<<<<<<<<<0<<<<<<<<<<<<<<<<", "mrz_linea2": "<<<<<<0<<<<<<<0MEX<<<<<<<<<<<0",
+                    "mrz_linea3": "PEREZ<<JUAN"}, 0.1
+        return {}, 0.1
+
+
+def test_carta_que_menciona_credencial_para_votar_se_rechaza(with_vlm):
+    """Un formato o carta con 'CREDENCIAL PARA VOTAR' pasa el filtro del OCR (encabezado), pero el VLM
+    no encuentra ningún dato de INE: se rechaza aunque haya inventado una MRZ de relleno."""
+    with_vlm(lambda img: [L("CREDENCIAL PARA VOTAR", 100), L("Favor de anexar copia de su", 140),
+                          L("DOMICILIO", 180)])
+    r = asyncio.run(pipeline.process([_page()], FakeVlmRelleno(), "carta.pdf"))
+    assert r.estado == "rechazado" and "sin CURP válida" in r.error
+
+
+def test_hoja_cualquiera_con_mrz_de_relleno_se_rechaza(with_vlm):
+    with_vlm(lambda img: [L("DOMICILIO"), L("Calle cualquiera numero 10", 40)])
+    r = asyncio.run(pipeline.process([_page()], FakeVlmRelleno(), "random.pdf"))
+    assert r.estado == "rechazado" and "sin encabezado" in r.error
