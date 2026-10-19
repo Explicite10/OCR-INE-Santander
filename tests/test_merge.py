@@ -203,3 +203,25 @@ def test_estructura_de_curp_se_recalcula_tras_reconstruir():
     mg = run(vlm_front(curp=damaged), ocr_front(curp=None))
     assert "curp" in mg.reconstructed
     assert next(c for c in mg.checks if c.regla == "curp_estructura_y_digito").resultado == "ok"
+
+
+def test_vlm_revuelve_apellidos_y_el_ocr_coincide_con_la_mrz():
+    """Caso real del lote: el VLM puso el materno como paterno y el paterno dentro de los nombres."""
+    mg = run(vlm_front(apellido_paterno="LOPEZ", apellido_materno="", nombres="PEREZ JUAN CARLOS"), ocr_front())
+    n = mg.datos.nombre
+    assert (n.apellido_paterno, n.apellido_materno, n.nombres) == ("PEREZ", "LOPEZ", "JUAN CARLOS")
+    assert next(c for c in mg.checks if c.regla == "nombre_vs_mrz").resultado == "ok"
+    assert next(c for c in mg.checks if c.regla == "clave_elector_vs_nombre").resultado == "ok"
+
+
+def test_se_conserva_la_ene_del_vlm_al_tomar_el_orden_del_ocr():
+    m = mrz.parse(make_mrz(nombre="NUNEZ<LOPEZ<<JUAN"))
+    mg = run(vlm_front(apellido_paterno="LOPEZ", apellido_materno="", nombres="NUÑEZ JUAN"),
+             ocr_front(nombre_lineas=["NUNEZ", "LOPEZ", "JUAN"]), m)
+    assert mg.datos.nombre.apellido_paterno == "NUÑEZ"
+
+
+def test_no_se_usa_el_ocr_si_tampoco_cuadra_con_la_mrz():
+    mg = run(vlm_front(apellido_paterno="LOPEZ", apellido_materno="", nombres="PEREZ JUAN CARLOS"),
+             ocr_front(nombre_lineas=["RUIZ", "SOTO", "ANA"]))
+    assert mg.datos.nombre.apellido_paterno != "RUIZ"

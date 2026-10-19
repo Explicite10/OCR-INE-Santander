@@ -130,6 +130,18 @@ def diagnose(r: dict) -> dict:
             difs.append(f"{regla.split('_vs_')[0]}: {m.group(1)}")
     row["nombre_vs_codigos_difiere"] = " | ".join(difs) or None
     row["clave_sin_saltar_maria_jose"] = "sin saltar" in ((checks.get("clave_elector_vs_nombre") or {}).get("detalle") or "")
+    # clave vs CURP (iniciales): qué posiciones 1-6 no cuadran y de qué parte del nombre son (sin letras)
+    m = re.search(r"clave '(\w{6})' vs CURP '(\w{6})'", (checks.get("clave_elector_vs_curp_iniciales") or {}).get("detalle") or "")
+    partes = ("paterno", "paterno", "materno", "materno", "nombre", "nombre")
+    row["clave_vs_curp_posiciones"] = (";".join(f"{i + 1}({partes[i]})" for i, (a, b) in enumerate(zip(*m.groups()))
+                                                if a != b) if m else None)
+    # Rasgos del nombre que suelen romper las reglas de iniciales (sin el nombre)
+    n = (r.get("datos") or {}).get("nombre") or {}
+    palabras = {k: (n.get(k) or "").split() for k in ("apellido_paterno", "apellido_materno", "nombres")}
+    particulas = {"DE", "DEL", "LA", "LAS", "LOS", "Y", "MC", "MAC", "VAN", "VON", "DA", "DI"}
+    row["nombre_palabras"] = "/".join(str(len(w)) for w in palabras.values())
+    row["nombre_con_particula"] = any(w in particulas for ws in palabras.values() for w in ws)
+    row["nombre_inicia_maria_jose"] = bool(palabras["nombres"]) and palabras["nombres"][0] in {"MARIA", "MA", "MA.", "JOSE", "J", "J."}
     desempates = [c["detalle"] for k, c in checks.items() if k.endswith("_desempate")]
     row["desempates"] = " | ".join(desempates) or None
     for etapa, ms in tiempos.items():

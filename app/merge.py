@@ -119,7 +119,13 @@ class Merger:
             return re.sub(r"\s+", " ", s.upper()).strip() if s else None
 
         pat, mat, nom = clean(pat), clean(mat), clean(nom)
-        if source != "mrz" and (aligned := self._align_with_mrz(pat, mat, nom)) and aligned != (pat, mat, nom):
+        if source == "vlm" and (from_ocr := self._ocr_names_if_vlm_wrong(pat, mat, nom)):
+            # El VLM revolvió las partes del nombre (p. ej. materno como paterno y el paterno dentro de
+            # los nombres) y el OCR, que lee renglón por renglón, sí coincide con la MRZ íntegra.
+            pat, mat, nom = from_ocr
+            self._check("nombre_alineado_con_mrz", True, "apellidos y nombre tomados del OCR (coinciden con la MRZ)")
+            self.warnings.append("Se reacomodaron apellidos y nombre según la MRZ")
+        elif source != "mrz" and (aligned := self._align_with_mrz(pat, mat, nom)) and aligned != (pat, mat, nom):
             # Mismas palabras impresas, pero repartidas (u ordenadas) distinto que en la MRZ:
             # p. ej. el VLM puso el nombre de pila como apellido, o partió mal "DE LA CRUZ".
             pat, mat, nom = aligned
@@ -135,10 +141,7 @@ class Merger:
             self._check("nombre_vlm_vs_ocr", sim >= 0.92, f"similitud {sim:.2f}")
             agree += sim >= 0.92
         if self.mrz and self.mrz.lineas and len(self.mrz.lineas) > 2 and source != "mrz":
-            expected = v.norm_text(f"{pat or ''}<{mat or ''}<<{nom or ''}".replace(" ", "<")).replace(" ", "")
-            got = self.mrz.lineas[2].rstrip("<").replace("<", "")
-            exp_compact = expected.replace("<", "")[: len(got)]
-            sim = v.similarity(exp_compact, got)
+            sim = self._mrz_name_sim(pat, mat, nom)
             self._check("nombre_vs_mrz", sim >= 0.92, f"similitud {sim:.2f}")
             agree += sim >= 0.92
         if not printed:
@@ -147,6 +150,32 @@ class Merger:
             self.conf["nombre"] = "alta"
         else:
             self.conf["nombre"] = "media" if agree or source == "vlm" else "baja"
+
+    def _mrz_name_sim(self, pat: str | None, mat: str | None, nom: str | None) -> float | None:
+        """Similitud entre el nombre (en orden paterno, materno, nombres) y el renglón 3 de la MRZ."""
+        if not (self.mrz and self.mrz.lineas and len(self.mrz.lineas) > 2):
+            return None
+        expected = v.norm_text(f"{pat or ''}<{mat or ''}<<{nom or ''}".replace(" ", "<")).replace(" ", "")
+        got = self.mrz.lineas[2].rstrip("<").replace("<", "")
+        return v.similarity(expected.replace("<", "")[: len(got)], got)
+
+    def _ocr_names_if_vlm_wrong(self, pat: str | None, mat: str | None, nom: str | None) -> tuple | None:
+        """Nombre del OCR (3+ renglones: paterno, materno, nombres) cuando el del VLM no cuadra con la
+        MRZ íntegra y el del OCR sí. Se conserva la ortografía del VLM (Ñ, acentos) palabra por palabra."""
+        ol = self.ocr.nombre_lineas
+        if not (self.mrz and self.mrz.valido and len(ol) >= 3):
+            return None
+        o_pat, o_mat, o_nom = ol[0], ol[1], " ".join(ol[2:])
+        vlm_sim = self._mrz_name_sim(pat, mat, nom) or 0.0
+        ocr_sim = self._mrz_name_sim(o_pat, o_mat, o_nom) or 0.0
+        if vlm_sim >= 0.92 or ocr_sim < 0.92:
+            return None
+        spelled = {v.norm_text(w).replace(" ", ""): w for w in " ".join(x for x in (pat, mat, nom) if x).split()}
+
+        def respell(text: str) -> str:
+            return " ".join(spelled.get(v.norm_text(w).replace(" ", ""), w) for w in text.upper().split())
+
+        return respell(o_pat), respell(o_mat), respell(o_nom)
 
     def _align_with_mrz(self, pat: str | None, mat: str | None, nom: str | None) -> tuple | None:
         """Corrige el orden de los campos del nombre y la frontera apellidos / nombres con la MRZ.
