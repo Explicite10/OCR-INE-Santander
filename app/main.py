@@ -2,9 +2,10 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi import Body, Depends, FastAPI, File, HTTPException, Query, Request, Security, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import pipeline
@@ -12,7 +13,7 @@ from .config import get_settings
 from .db import Database, Extraccion
 from .documents import PDF_MAGIC
 from .ocr import engine
-from .respuesta import MENSAJES, construir, http_status, sobre
+from .respuesta import ESTADOS, MENSAJES, construir, http_status, sobre
 from .schemas import ExtraccionDetalle, ExtraccionResumen, ListaExtracciones, Revision
 from .vlm import VlmClient
 
@@ -54,7 +55,17 @@ app = FastAPI(
 )
 
 
-def check_api_key(x_api_key: str | None = Header(default=None)) -> None:
+# En /docs aparece como el botón "Authorize" (candado): se captura una vez y va en todas las llamadas.
+_api_key = APIKeyHeader(name="X-API-Key", auto_error=False,
+                        description="El valor de API_KEY del .env del servidor (si no está definida, no se pide)")
+
+
+def _error_doc(*codigos: int) -> dict:
+    """Errores documentados en /docs con el mismo sobre que devuelve la API."""
+    return {c: {"description": ESTADOS[c], "content": {"application/json": {"example": sobre(c)}}} for c in codigos}
+
+
+def check_api_key(x_api_key: str | None = Security(_api_key)) -> None:
     expected = get_settings().api_key
     if expected and x_api_key != expected:
         raise HTTPException(status_code=401, detail=MENSAJES[401])
@@ -133,7 +144,8 @@ _EJEMPLO = {"codigo": 200, "estado": "PROCESADO", "mensaje": MENSAJES[200],
 @app.post("/ine", dependencies=[Depends(check_api_key)], response_class=JSONResponse,
           summary="Extrae los datos de una credencial INE",
           responses={200: {"description": "Desenlace en `codigo` (200, 210-212, 220-224)",
-                           "content": {"application/json": {"example": _EJEMPLO}}}})
+                           "content": {"application/json": {"example": _EJEMPLO}}},
+                     **_error_doc(400, 401, 413, 422, 500)})
 async def ine(
     file: UploadFile = File(..., description="PDF con anverso y reverso (o sólo el anverso)"),
     reverso: UploadFile | None = File(None, description="Opcional: reverso, si viene en un archivo aparte"),
@@ -176,7 +188,8 @@ def _resumen(r: Extraccion) -> ExtraccionResumen:
                              campos_a_revisar=r.campos_a_revisar or [], tiempo_ms=r.tiempo_ms)
 
 
-@app.get("/v1/ine/extracciones", response_model=ListaExtracciones, dependencies=[Depends(check_api_key)])
+@app.get("/v1/ine/extracciones", response_model=ListaExtracciones, dependencies=[Depends(check_api_key)],
+         responses=_error_doc(401, 503))
 async def listar(
     estado: str | None = Query(None, description="ok | revisar | error | revisado"),
     curp: str | None = None,
@@ -188,7 +201,8 @@ async def listar(
     return ListaExtracciones(total=total, elementos=[_resumen(r) for r in rows])
 
 
-@app.get("/v1/ine/extracciones/{id_}", response_model=ExtraccionDetalle, dependencies=[Depends(check_api_key)])
+@app.get("/v1/ine/extracciones/{id_}", response_model=ExtraccionDetalle, dependencies=[Depends(check_api_key)],
+         responses=_error_doc(401, 404))
 async def detalle(id_: str) -> ExtraccionDetalle:
     r = await _db().get(id_)
     if r is None:
@@ -199,7 +213,7 @@ async def detalle(id_: str) -> ExtraccionDetalle:
 
 
 @app.put("/v1/ine/extracciones/{id_}/revision", response_model=ExtraccionDetalle,
-         dependencies=[Depends(check_api_key)])
+         dependencies=[Depends(check_api_key)], responses=_error_doc(401, 404))
 async def revisar(id_: str, revision: Revision = Body(...)) -> ExtraccionDetalle:
     """Guarda los datos corregidos por una persona y marca la extracción como 'revisado'."""
     r = await _db().review(id_, revision.datos, revision.revisado_por)
