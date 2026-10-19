@@ -352,7 +352,6 @@ def construir(r: ResultadoINE, revisar_reconstruidos: bool = True) -> dict:
                      "modelo_vlm": meta.modelo_vlm, "paginas": meta.paginas,
                      "recorte_anverso": meta.recorte_anverso, "recorte_reverso": meta.recorte_reverso})
         if meta else None,
-        recortes=r.recortes,
     )
 
 

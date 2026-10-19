@@ -90,8 +90,6 @@ cp .env.example .env
 curl -X POST localhost:8000/ine -F "file=@ine.pdf;type=application/pdf"
 ```
 
-- Anverso y reverso en archivos separados: `-F "file=@frente.pdf" -F "reverso=@reverso.pdf"`
-- Recortes en base64 para una pantalla de revisión: `?incluir_recortes=true`
 - Documentación interactiva: http://localhost:8000/docs
 
 **Lote (p. ej. 500 PDFs)**
@@ -166,7 +164,7 @@ El lote comparte el modelo con producción: córrelo fuera de horario o con `--c
 
 | Método | Ruta | Uso |
 |---|---|---|
-| POST | `/ine` | Extrae una INE. Campo `file` (y opcional `reverso`). Respuesta homologada (abajo) |
+| POST | `/ine` | Extrae una INE. Campo `file` (un PDF). Respuesta homologada (abajo) |
 | GET | `/v1/ine/extracciones?estado=revisar&q=perez&curp=...` | Historial con filtros (formato interno) |
 | GET | `/v1/ine/extracciones/{id}` | Resultado completo guardado (formato interno) |
 | PUT | `/v1/ine/extracciones/{id}/revision` | Guarda la corrección humana (`{"datos": {...}, "revisado_por": "..."}`) |
@@ -201,7 +199,7 @@ Cuerpo cuando sí es INE: `frente` (lo impreso), `atras.mrz` (TD1, con `digitos_
 `integra` y `origen`), `validacion` (`ok`, `completo`, `coincidencias`, `discrepancias`,
 `sin_verificar`), `avisos` y `clasificacion`. Si un dato no se pudo leer, la llave no aparece.
 Además, como extensiones: `id` (para `/v1/ine/extracciones/{id}`), `confianza` por campo,
-`campos_reconstruidos`, `meta` (tiempos) y `recortes` (si se piden).
+`campos_reconstruidos` y `meta` (tiempos).
 
 Para aprobar automáticamente: `codigo == 200` (equivale a `validacion.ok` y `validacion.completo`
 sin `avisos`).

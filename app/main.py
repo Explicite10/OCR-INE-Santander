@@ -147,25 +147,18 @@ _EJEMPLO = {"codigo": 200, "estado": "PROCESADO", "mensaje": MENSAJES[200],
                            "content": {"application/json": {"example": _EJEMPLO}}},
                      **_error_doc(400, 401, 413, 422, 500)})
 async def ine(
-    file: UploadFile = File(..., description="PDF con anverso y reverso (o sólo el anverso)"),
-    reverso: UploadFile | None = File(None, description="Opcional: reverso, si viene en un archivo aparte"),
-    incluir_recortes: bool = Query(False, description="Agrega `recortes` (PNG en base64) para revisión"),
+    file: UploadFile = File(..., description="PDF con la credencial (anverso y reverso)"),
 ) -> JSONResponse:
-    files = []
-    for f in (file, reverso):
-        if f is None:
-            continue
-        data = await _read(f)
-        if isinstance(data, JSONResponse):
-            return data
-        files.append(data)
+    data = await _read(file)
+    if isinstance(data, JSONResponse):
+        return data
     async with app.state.sem:
-        result = await pipeline.process(files, app.state.vlm, file.filename, include_crops=incluir_recortes)
+        result = await pipeline.process([data], app.state.vlm, file.filename)
     log.info("archivo procesado estado=%s tiempo_ms=%s revisar=%s", result.estado,
              result.meta.tiempo_total_ms if result.meta else None, result.campos_a_revisar)
     if app.state.db is not None and get_settings().guardar_resultados:
         try:
-            result.id = await app.state.db.save(result.model_dump(mode="json", exclude={"recortes"}))
+            result.id = await app.state.db.save(result.model_dump(mode="json"))
         except Exception:  # noqa: BLE001  (no perder la extracción si falla el guardado)
             log.exception("No se pudo guardar el resultado")
             result.advertencias.append("No se pudo guardar el resultado en la base de datos")

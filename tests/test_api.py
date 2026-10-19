@@ -107,3 +107,13 @@ def test_sin_interfaz_web(client):
 
 def test_ruta_vieja_ya_no_existe(client):
     assert client.post("/v1/ine/extraer", files=PDF, headers=H).status_code == 404
+
+
+def test_ine_solo_recibe_file(client):
+    from app.main import app as fastapi_app
+
+    op = fastapi_app.openapi()["paths"]["/ine"]["post"]
+    assert "parameters" not in op  # sin incluir_recortes
+    schema_ref = op["requestBody"]["content"]["multipart/form-data"]["schema"]["$ref"].split("/")[-1]
+    props = fastapi_app.openapi()["components"]["schemas"][schema_ref]["properties"]
+    assert list(props) == ["file"]  # sin reverso
