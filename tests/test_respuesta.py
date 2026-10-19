@@ -141,3 +141,23 @@ def test_pdf_cortado_o_basura():
     with pytest.raises(DocumentError) as e:
         load_pages(b"%PDF-1.4 basura sin estructura", 72, 4, 15)
     assert e.value.codigo == 222
+
+
+def test_reporte_del_lote_calcula_el_codigo_de_la_api(tmp_path):
+    import json
+
+    from scripts import procesar_lote
+
+    (tmp_path / "json").mkdir()
+    ok = resultado().model_dump(mode="json")
+    malo = resultado(vlm=vlm_front(apellido_materno="GOMEZ"),
+                     ocr=ocr_front(nombre_lineas=["PEREZ", "GOMEZ", "JUAN CARLOS"])).model_dump(mode="json")
+    for i, r in enumerate((ok, malo, {"archivo": "x.pdf", "estado": "error", "error": "PDF inválido"})):
+        r["archivo"] = f"{i}.pdf"
+        (tmp_path / "json" / f"{i}.json").write_text(json.dumps(r))
+    procesar_lote.write_reports(tmp_path)
+    resumen = (tmp_path / "resumen.md").read_text()
+    assert "| 200 | PROCESADO | 1" in resumen and "| 210 | PROCESADO_CON_DISCREPANCIAS | 1" in resumen
+    assert "| 222 | ARCHIVO_CORRUPTO | 1" in resumen
+    assert "nombre vs clave_elector (iniciales)" in resumen
+    assert "codigo_api" in (tmp_path / "diagnostico.csv").read_text(encoding="utf-8-sig").splitlines()[0]

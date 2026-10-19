@@ -23,14 +23,23 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app import pipeline  # noqa: E402
+from app import pipeline, respuesta  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.ocr import engine  # noqa: E402
+from app.schemas import ResultadoINE  # noqa: E402
 from app.vlm import VlmClient  # noqa: E402
 
 EXTS = {".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".bmp"}
 CONF_FIELDS = ["nombre", "fecha_nacimiento", "sexo", "curp", "clave_elector", "domicilio", "seccion",
                "vigencia", "anio_registro", "cic", "identificador_ciudadano"]
+
+
+def codigo_api(r: dict) -> int | None:
+    """El `codigo` que devolvería POST /ine para este resultado (200, 210, 211, 220...)."""
+    try:
+        return respuesta.construir(ResultadoINE.model_validate(r), get_settings().revisar_reconstruidos)["codigo"]
+    except Exception:  # noqa: BLE001  (un JSON viejo o incompleto no debe tumbar el reporte)
+        return None
 
 
 def flatten(r: dict) -> dict:
@@ -42,6 +51,7 @@ def flatten(r: dict) -> dict:
     row = {
         "archivo": r.get("archivo"),
         "estado": r.get("estado"),
+        "codigo_api": codigo_api(r),
         "campos_a_revisar": ";".join(r.get("campos_a_revisar") or []),
         "apellido_paterno": n.get("apellido_paterno"),
         "apellido_materno": n.get("apellido_materno"),
@@ -89,6 +99,7 @@ def diagnose(r: dict) -> dict:
     row = {
         "archivo": r.get("archivo"),
         "estado": r.get("estado"),
+        "codigo_api": codigo_api(r),
         "campos_a_revisar": ";".join(r.get("campos_a_revisar") or []),
         "campos_reconstruidos": ";".join(r.get("campos_reconstruidos") or []),
         "validaciones_falla": ";".join(c["regla"] for c in r.get("validaciones") or [] if c["resultado"] == "falla"),
@@ -184,6 +195,21 @@ def write_reports(out: Path) -> None:
             stages.setdefault(etapa, []).append(ms / 1000)
     if stages:
         lines += ["- Mediana por etapa: " + ", ".join(f"{k} {statistics.median(v):.1f} s" for k, v in stages.items())]
+    codigos = Counter(r["codigo_api"] for r in rows)
+    lines += ["", "## Código de respuesta de la API (POST /ine)", "", "| codigo | estado | Documentos |", "|---:|---|---|"]
+    lines += [f"| {c} | {respuesta.ESTADOS.get(c, '?') if c else 'sin calcular'} | {n} ({pct(n)}) |"
+              for c, n in sorted(codigos.items(), key=lambda x: (x[0] is None, x[0] or 0))]
+    disc = Counter()
+    for r in results:
+        try:
+            body = respuesta.construir(ResultadoINE.model_validate(r), get_settings().revisar_reconstruidos)
+        except Exception:  # noqa: BLE001
+            continue
+        for d in (body.get("validacion") or {}).get("discrepancias") or []:
+            disc[d.split(":")[0]] += 1
+    if disc:
+        lines += ["", "## Discrepancias que reportaría la API", "", "| Comprobación | Documentos |", "|---|---|"]
+        lines += [f"| {k} | {v} ({pct(v)}) |" for k, v in disc.most_common()]
     lines += ["", "## Confianza por campo", "", "| Campo | Alta | Media | Baja | Sin dato |", "|---|---|---|---|---|"]
     for f in CONF_FIELDS:
         c = Counter(r[f"conf_{f}"] for r in rows)
