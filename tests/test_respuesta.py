@@ -7,7 +7,7 @@ from app import mrz, respuesta
 from app.documents import DocumentError, LimitePaginas, PdfProtegido, load_pages
 from app.merge import Merger, needs_review
 from app.schemas import Meta, ResultadoINE
-from tests.factories import CLAVE, make_mrz
+from tests.factories import CLAVE, make_curp, make_mrz
 from tests.test_merge import CURP, ocr_front, vlm_front
 
 
@@ -161,3 +161,26 @@ def test_reporte_del_lote_calcula_el_codigo_de_la_api(tmp_path):
     assert "| 222 | ARCHIVO_CORRUPTO | 1" in resumen
     assert "nombre vs clave_elector (iniciales)" in resumen
     assert "codigo_api" in (tmp_path / "diagnostico.csv").read_text(encoding="utf-8-sig").splitlines()[0]
+
+
+def test_fecha_mal_leida_por_un_solo_lector_no_es_discrepancia():
+    body = respuesta.construir(resultado(vlm=vlm_front(fecha_nacimiento="12/08/1985")))
+    assert not any(d.startswith("fecha_nacimiento") for d in body["validacion"]["discrepancias"])
+    assert body["frente"]["fecha_nacimiento"] == "1985-03-12"
+
+
+def test_solo_el_renglon_de_nombres_de_la_mrz_discrepa_es_aviso():
+    m = mrz.parse(make_mrz(nombre="PEREZ<LOPEZ<<JOSE<MARIA"))
+    body = respuesta.construir(resultado(m=m))
+    assert body["codigo"] == 211 and not body["validacion"]["discrepancias"]
+    assert any(a.startswith("atras.mrz: el renglón de apellidos") for a in body["avisos"])
+
+
+def test_regla_de_iniciales_que_no_aplica_es_sin_verificar():
+    curp = make_curp("PELI850312HDFRPV0")  # CURP y clave de "IVAN", que concuerdan entre sí
+    clave = "PRLPIV85031209H400"
+    body = respuesta.construir(resultado(vlm=vlm_front(curp=curp, clave_elector=clave),
+                                         ocr=ocr_front(curp=curp, clave_elector=clave)))
+    v = body["validacion"]
+    assert not v["discrepancias"] and body["codigo"] == 212
+    assert any("regla de iniciales" in x for x in v["sin_verificar"])

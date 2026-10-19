@@ -159,3 +159,47 @@ def test_clave_salta_maria_jose_como_la_curp():
              ocr_front(nombre_lineas=["PEREZ", "LOPEZ", "MARIA GUADALUPE"], clave_elector="PRLPMR85031209H400"))
     d = next(c for c in mg.checks if c.regla == "clave_elector_vs_nombre")
     assert d.resultado == "ok" and "sin saltar" in d.detalle
+
+
+def test_nombre_en_desorden_se_reacomoda_con_la_mrz():
+    mg = run(vlm_front(apellido_paterno="JUAN CARLOS", apellido_materno="PEREZ", nombres="LOPEZ"), ocr_front())
+    n = mg.datos.nombre
+    assert (n.apellido_paterno, n.apellido_materno, n.nombres) == ("PEREZ", "LOPEZ", "JUAN CARLOS")
+    assert any(c.regla == "nombre_alineado_con_mrz" for c in mg.checks)
+    assert next(c for c in mg.checks if c.regla == "nombre_vs_mrz").resultado == "ok"
+
+
+def test_apellido_compuesto_correcto_no_se_toca():
+    """La MRZ no distingue "DE LA CRUZ | LOPEZ" de "DE | LA CRUZ LOPEZ": se respeta lo impreso."""
+    m = mrz.parse(make_mrz(nombre="DE<LA<CRUZ<LOPEZ<<JUAN"))
+    mg = run(vlm_front(apellido_paterno="DE LA CRUZ", apellido_materno="LOPEZ", nombres="JUAN"),
+             ocr_front(nombre_lineas=["DE LA CRUZ", "LOPEZ", "JUAN"]), m)
+    n = mg.datos.nombre
+    assert (n.apellido_paterno, n.apellido_materno, n.nombres) == ("DE LA CRUZ", "LOPEZ", "JUAN")
+    assert not any(c.regla == "nombre_alineado_con_mrz" for c in mg.checks)
+
+
+def test_nombre_de_pila_metido_en_el_materno_se_corrige():
+    mg = run(vlm_front(apellido_paterno="PEREZ", apellido_materno="LOPEZ JUAN", nombres="CARLOS"), ocr_front())
+    n = mg.datos.nombre
+    assert (n.apellido_paterno, n.apellido_materno, n.nombres) == ("PEREZ", "LOPEZ", "JUAN CARLOS")
+
+
+def test_sin_mrz_integra_no_se_reacomoda():
+    l1, l2, l3 = make_mrz()
+    rota = mrz.parse([l1, l2[:29] + str((int(l2[29]) + 1) % 10), l3])
+    mg = run(vlm_front(apellido_paterno="JUAN CARLOS", apellido_materno="PEREZ", nombres="LOPEZ"), ocr_front(), rota)
+    assert mg.datos.nombre.apellido_paterno == "JUAN CARLOS"
+
+
+def test_seccion_de_la_mrz_verificada_manda():
+    mg = run(vlm_front(seccion="1243"), ocr_front())
+    assert mg.datos.seccion == "1234" and mg.conf["seccion"] == "media"
+    assert next(c for c in mg.checks if c.regla == "seccion_vs_mrz").resultado == "falla"
+
+
+def test_estructura_de_curp_se_recalcula_tras_reconstruir():
+    damaged = CURP[:1] + CURP[2:10] + "HUP" + CURP[13:]
+    mg = run(vlm_front(curp=damaged), ocr_front(curp=None))
+    assert "curp" in mg.reconstructed
+    assert next(c for c in mg.checks if c.regla == "curp_estructura_y_digito").resultado == "ok"

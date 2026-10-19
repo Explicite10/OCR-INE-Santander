@@ -198,7 +198,8 @@ LABELS = {
 }
 # Acuerdo entre los dos lectores (VLM y OCR) y correcciones internas: no son contrastes del
 # documento. Un desacuerdo ya se resolvió en la fusión o bajó la confianza del campo (→ aviso).
-_INTERNAL = ("_vlm_vs_ocr", "_desempate", "_reconstruida", "nombre_enie_corregida")
+_INTERNAL = ("_vlm_vs_ocr", "_desempate", "_reconstruida", "nombre_enie_corregida", "nombre_alineado_con_mrz")
+_READERS = {"vlm", "ocr"}
 # Datos que faltan, no que se contradicen
 _GAPS = ("domicilio_codigo_postal", "domicilio_estado_reconocido")
 
@@ -222,8 +223,14 @@ def validacion(r: ResultadoINE) -> dict:
     elif "mrz_legible" in by_rule:
         sin_verificar.append("MRZ: no se localizó o no se pudo leer el reverso")
 
-    codes_agree = (by_rule.get("clave_elector_vs_curp_iniciales") is not None
-                   and by_rule["clave_elector_vs_curp_iniciales"].resultado == "ok")
+    def result(regla: str) -> str | None:
+        return by_rule[regla].resultado if regla in by_rule else None
+
+    codes_agree = result("clave_elector_vs_curp_iniciales") == "ok"
+    name_rules_run = [r for r in _NAME_RULES if result(r) in ("ok", "falla")]
+    name_matches_codes = bool(name_rules_run) and all(result(r) == "ok" for r in name_rules_run)
+    name_matches_mrz = result("nombre_vs_mrz") == "ok" and mrz_integra
+    avisos_extra: list[str] = []
     for c in checks:
         regla = c.regla
         if regla in _MRZ_RULES or regla == "mrz_legible" or any(regla.endswith(s) or regla == s for s in _INTERNAL):
@@ -231,6 +238,25 @@ def validacion(r: ResultadoINE) -> dict:
         label = LABELS.get(regla, regla)
         if regla.endswith("_vs_mrz") and mrz_checks and not mrz_integra:
             sin_verificar.append(f"{label}: la MRZ no es íntegra")
+            continue
+        if c.resultado == "falla" and regla == "fecha_nacimiento_consistente":
+            # Si sólo difiere UNO de los lectores (VLM u OCR) y las fuentes del documento coinciden,
+            # es un error de lectura que la fusión ya descartó, no una contradicción del documento.
+            fuentes = {x.strip() for x in (c.detalle or "").removeprefix("difieren:").split(",") if x.strip()}
+            if fuentes and fuentes <= _READERS and len(fuentes) == 1:
+                coincidencias.append(label)
+                continue
+        if c.resultado == "falla" and regla == "nombre_vs_mrz" and name_matches_codes:
+            # El frente cuadra con la CURP y la clave (impresas); el que discrepa es el renglón 3 de
+            # la MRZ, que no tiene dígito verificador: se avisa en vez de acusar al documento.
+            avisos_extra.append("atras.mrz: el renglón de apellidos y nombre no coincide con el frente; el frente "
+                                "sí cuadra con la CURP y la clave de elector (ese renglón no tiene dígito verificador)")
+            continue
+        if c.resultado == "falla" and regla in _NAME_RULES and name_matches_mrz and codes_agree:
+            # El nombre coincide con la MRZ y los dos códigos concuerdan entre sí: lo que no cuadra es la
+            # regla de iniciales (nombres compuestos, partículas, excepciones del RENAPO), no el documento.
+            sin_verificar.append(f"{label}: el nombre coincide con la MRZ pero la regla de iniciales no "
+                                 "reproduce el código")
             continue
         if c.resultado == "ok":
             coincidencias.append(label)
@@ -249,9 +275,10 @@ def validacion(r: ResultadoINE) -> dict:
     return {
         "ok": not discrepancias,
         "completo": not sin_verificar,
-        "coincidencias": coincidencias,
+        "coincidencias": list(dict.fromkeys(coincidencias)),
         "discrepancias": discrepancias,
         "sin_verificar": sin_verificar,
+        "_avisos": avisos_extra,  # se mueven a `avisos` en construir()
     }
 
 
@@ -259,7 +286,8 @@ def validacion(r: ResultadoINE) -> dict:
 
 _FIELD_PATH = {"cic": "atras.mrz.cic", "identificador_ciudadano": "atras.mrz.identificador_ciudadano"}
 # Advertencias internas que son sólo informativas (no piden ojo humano)
-_INFO = ("Se corrigió una Ñ", "Localizador:", "El localizador no vio", "VLM deshabilitado")
+_INFO = ("Se corrigió una Ñ", "Se reacomodaron apellidos", "Localizador:", "El localizador no vio",
+         "VLM deshabilitado")
 _RECONSTRUIDA = ("CURP reconstruida", "Clave de elector reconstruida")
 
 
@@ -296,7 +324,7 @@ def construir(r: ResultadoINE, revisar_reconstruidos: bool = True) -> dict:
         return sobre(221 if blanco else 220, clasificacion=_clean(clasif, keep_none=("categoria", "confianza")))
 
     val = validacion(r)
-    avs = avisos(r, revisar_reconstruidos)
+    avs = avisos(r, revisar_reconstruidos) + val.pop("_avisos")
     if val["discrepancias"]:
         codigo = 210
     elif avs:

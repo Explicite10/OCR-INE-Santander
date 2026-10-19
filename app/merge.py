@@ -10,6 +10,7 @@ El documento queda en "revisar" si algún campo crítico tiene confianza baja.
 
 import re
 from collections import Counter
+from itertools import permutations
 from datetime import date
 
 from . import validators as v
@@ -68,8 +69,11 @@ class Merger:
         self._reconstruct_clave()
         self._reconstruct_curp()
         if self.reconstructed:
-            # La lectura dañada ya votó fecha/sexo antes de reconstruirse: se vuelve a evaluar
-            # con el código reconstruido para que las validaciones no queden desactualizadas.
+            # La lectura dañada ya votó fecha/sexo y su estructura antes de reconstruirse: se vuelve
+            # a evaluar con el código reconstruido para que las validaciones no queden desactualizadas.
+            d = self.datos
+            self._check("curp_estructura_y_digito", v.curp_valid(d.curp) if d.curp else None, d.curp)
+            self._check("clave_elector_estructura", v.clave_valid(d.clave_elector) if d.clave_elector else None)
             self._birthdate()
             self._sex()
         self._address()
@@ -115,6 +119,12 @@ class Merger:
             return re.sub(r"\s+", " ", s.upper()).strip() if s else None
 
         pat, mat, nom = clean(pat), clean(mat), clean(nom)
+        if source != "mrz" and (aligned := self._align_with_mrz(pat, mat, nom)) and aligned != (pat, mat, nom):
+            # Mismas palabras impresas, pero repartidas (u ordenadas) distinto que en la MRZ:
+            # p. ej. el VLM puso el nombre de pila como apellido, o partió mal "DE LA CRUZ".
+            pat, mat, nom = aligned
+            self._check("nombre_alineado_con_mrz", True, "apellidos y nombre reacomodados según la MRZ")
+            self.warnings.append("Se reacomodaron apellidos y nombre según la MRZ")
         full = " ".join(x for x in (nom, pat, mat) if x) or None
         self.datos.nombre = Nombre(apellido_paterno=pat, apellido_materno=mat, nombres=nom, nombre_completo=full)
 
@@ -137,6 +147,34 @@ class Merger:
             self.conf["nombre"] = "alta"
         else:
             self.conf["nombre"] = "media" if agree or source == "vlm" else "baja"
+
+    def _align_with_mrz(self, pat: str | None, mat: str | None, nom: str | None) -> tuple | None:
+        """Corrige el orden de los campos del nombre y la frontera apellidos / nombres con la MRZ.
+
+        La MRZ sólo es confiable en el "<<" que separa apellidos de nombres: dentro de los apellidos
+        usa el mismo "<" para las palabras de un apellido compuesto ("DE<LA<CRUZ") y para separar
+        paterno de materno, así que esa división se respeta tal como la leyó el VLM. Sólo con MRZ
+        íntegra y sólo con las MISMAS palabras impresas (se conservan Ñ y acentos).
+        """
+        m = self.mrz
+        if not (m and m.valido and m.nombres and len(m.lineas) > 2 and "<<" in m.lineas[2]):
+            return None
+
+        def norm(words: list[str]) -> str:
+            return v.norm_text(" ".join(words)).replace(" ", "")
+
+        surnames = norm(m.lineas[2].split("<<", 1)[0].split("<"))
+        given = norm([m.nombres])
+        truncated = not m.lineas[2].endswith("<")  # el último campo puede venir cortado
+        fields = [x for x in (pat, mat, nom) if x]
+        for order in permutations(fields):  # el orden actual va primero
+            first = order[0].split()
+            words = " ".join(order).split()
+            for j in range(len(first), len(words)):  # el primer campo completo es apellido paterno
+                rest = norm(words[j:])
+                if norm(words[:j]) == surnames and (rest == given or (truncated and rest.startswith(given))):
+                    return " ".join(first), " ".join(words[len(first):j]) or None, " ".join(words[j:])
+        return None
 
     def _pick_code(self, name: str, vlm_raw: str | None, ocr_val: str | None, normalize, valid) -> str | None:
         vlm_val = normalize(vlm_raw)
@@ -307,8 +345,14 @@ class Merger:
             sec = sec.zfill(4)
         if sec and mrz_sec:
             self._check("seccion_vs_mrz", sec == mrz_sec, None if sec == mrz_sec else f"anverso={sec} mrz={mrz_sec}")
-        d.seccion = sec or mrz_sec
-        self.conf["seccion"] = "alta" if sec and sec == mrz_sec else ("baja" if sec and mrz_sec else "media")
+        mrz_sec_ok = bool(mrz_sec) and self._mrz_check("mrz_compuesto")  # el compuesto cubre la sección
+        d.seccion = mrz_sec if mrz_sec_ok else (sec or mrz_sec)
+        if sec and sec == mrz_sec:
+            self.conf["seccion"] = "alta"
+        elif mrz_sec_ok:
+            self.conf["seccion"] = "media"  # el anverso se leyó distinto: se queda la de la MRZ verificada
+        else:
+            self.conf["seccion"] = "baja" if sec and mrz_sec else "media"
         if not d.seccion:
             self.conf["seccion"] = "baja"
 
@@ -321,7 +365,11 @@ class Merger:
                 d.anio_registro, d.anio_registro_sufijo = reg[0][:4], reg[0][4:]
         if self.mrz and self.mrz.anio_registro_sufijo:
             if d.anio_registro_sufijo:
-                self._check("anio_registro_sufijo_vs_mrz", d.anio_registro_sufijo == self.mrz.anio_registro_sufijo)
+                self._check("anio_registro_sufijo_vs_mrz", d.anio_registro_sufijo == self.mrz.anio_registro_sufijo,
+                            None if d.anio_registro_sufijo == self.mrz.anio_registro_sufijo else
+                            f"anverso={d.anio_registro_sufijo} mrz={self.mrz.anio_registro_sufijo}")
+                if self._mrz_check("mrz_compuesto"):
+                    d.anio_registro_sufijo = self.mrz.anio_registro_sufijo
             else:
                 d.anio_registro_sufijo = self.mrz.anio_registro_sufijo
         self.conf["anio_registro"] = "media" if d.anio_registro else "baja"
