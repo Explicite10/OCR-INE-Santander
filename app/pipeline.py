@@ -29,8 +29,12 @@ def _ms(t: float) -> int:
 
 
 def _meta(s, times: dict[str, int], t_start: float, layout: Layout, mrz_source: str | None,
-          vlm: VlmClient | None, senales: list[str]) -> Meta:
+          vlm: VlmClient | None, senales: list[str], caracteres: int = 0, categoria: str | None = None,
+          documento: str | None = None) -> Meta:
     return Meta(
+        caracteres_leidos=caracteres,
+        categoria=categoria,
+        documento_detectado=documento,
         tiempo_total_ms=_ms(time.perf_counter() - t_start),
         tiempos_ms=times,
         modelo_vlm=s.vlm_model if vlm is not None and s.vlm_enabled else None,
@@ -54,9 +58,9 @@ async def process(files: list[bytes], vlm: VlmClient | None, filename: str | Non
     try:
         pages: list[np.ndarray] = []
         for data in files:
-            pages += await asyncio.to_thread(load_pages, data, s.render_dpi, s.max_pages)
+            pages += await asyncio.to_thread(load_pages, data, s.render_dpi, s.max_pages, s.max_paginas_documento)
     except DocumentError as e:
-        return ResultadoINE(archivo=filename, estado="error", error=str(e),
+        return ResultadoINE(archivo=filename, estado="error", error=str(e), error_codigo=e.codigo,
                             meta=Meta(tiempo_total_ms=_ms(time.perf_counter() - t_start)))
     times["render"] = _ms(time.perf_counter() - t)
 
@@ -83,12 +87,13 @@ async def process(files: list[bytes], vlm: VlmClient | None, filename: str | Non
         log.info("Documento rechazado: %s", motivo)
         return ResultadoINE(archivo=filename, estado="rechazado", error=motivo,
                             advertencias=list(layout.warnings),
-                            meta=_meta(s, times, t_start, layout, None, vlm, veredicto.senales))
+                            meta=_meta(s, times, t_start, layout, None, vlm, veredicto.senales, texto, "hoja_en_blanco"))
     if s.rechazar_no_ine and s.ocr_enabled and (veredicto.otro_documento or (not vlm_on and not veredicto.es_ine)):
         log.info("Documento rechazado: %s", veredicto.motivo)
         return ResultadoINE(archivo=filename, estado="rechazado", error=veredicto.motivo,
                             advertencias=list(layout.warnings),
-                            meta=_meta(s, times, t_start, layout, None, vlm, veredicto.senales))
+                            meta=_meta(s, times, t_start, layout, None, vlm, veredicto.senales, texto, "otro",
+                                       veredicto.otro_documento))
 
     # 2c. Sin anclas en ninguna página: el VLM ubica las credenciales y se repite el OCR en los recortes.
     if vlm_on and s.vlm_localizador and s.ocr_enabled and not layout.anchored:
@@ -161,7 +166,7 @@ async def process(files: list[bytes], vlm: VlmClient | None, filename: str | Non
     if vlm_front is None and vlm is not None and s.vlm_enabled:
         estado = "revisar"
 
-    meta = _meta(s, times, t_start, layout, mrz_source, vlm, veredicto.senales)
+    meta = _meta(s, times, t_start, layout, mrz_source, vlm, veredicto.senales, texto, "ine")
 
     # 5. Verificación final: el VLM leyó la imagen y aun así no hay DATOS de una INE: ni MRZ con
     #    CIC real y algún dígito verificador, ni clave de elector válida, ni CURP válida.
@@ -175,6 +180,7 @@ async def process(files: list[bytes], vlm: VlmClient | None, filename: str | Non
                   + (" y sin CURP válida (sólo se encontró texto parecido al encabezado)" if front_ancla else
                      " y sin encabezado"))
         log.info("Documento rechazado tras el VLM: %s", motivo)
+        meta.categoria = "otro"
         return ResultadoINE(archivo=filename, estado="rechazado", error=motivo, advertencias=warnings, meta=meta)
 
     result = ResultadoINE(

@@ -513,6 +513,14 @@ class Merger:
             self._check("curp_consonantes_vs_nombre", ok, None if ok else
                         f"esperado {exp}, curp {d.curp[13:16]} ({_differs(exp, d.curp[13:16], ('paterno', 'materno', 'nombre'))})")
         if d.curp and d.clave_elector and v.curp_valid(d.curp) and v.clave_valid(d.clave_elector):
+            # Las 6 letras de la clave salen de las mismas letras que codifica la CURP (iniciales en
+            # 1, 3, 4 y consonantes internas en 14-16). Se comparan los dos códigos impresos entre sí,
+            # sin pasar por el nombre leído: si cuadran y el nombre no, el sospechoso es el nombre.
+            # Una X en la CURP sustituye a la Ñ o a una consonante que no existe: vale cualquier letra.
+            exp = d.curp[0] + d.curp[13] + d.curp[2] + d.curp[14] + d.curp[3] + d.curp[15]
+            got = d.clave_elector[:6]
+            ok = all(e == g or e == "X" for e, g in zip(exp, got))
+            self._check("clave_elector_vs_curp_iniciales", ok, None if ok else f"clave '{got}' vs CURP '{exp}'")
             ok = d.curp[4:10] == d.clave_elector[6:12] and d.curp[10] == d.clave_elector[14]
             self._check("curp_vs_clave_elector", ok, "fecha y sexo")
             if ok:  # se respaldan mutuamente (salvo si uno se reconstruyó a partir del otro)

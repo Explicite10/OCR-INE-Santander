@@ -87,10 +87,10 @@ cp .env.example .env
 ```
 
 ```bash
-curl -X POST localhost:8000/v1/ine/extraer -F "archivo=@ine.pdf"
+curl -X POST localhost:8000/ine -F "file=@ine.pdf;type=application/pdf"
 ```
 
-- Anverso y reverso en archivos separados: `-F "archivo=@frente.jpg" -F "reverso=@reverso.jpg"`
+- Anverso y reverso en archivos separados: `-F "file=@frente.pdf" -F "reverso=@reverso.pdf"`
 - Recortes en base64 para una pantalla de revisión: `?incluir_recortes=true`
 - Documentación interactiva: http://localhost:8000/docs
 
@@ -166,40 +166,76 @@ El lote comparte el modelo con producción: córrelo fuera de horario o con `--c
 
 | Método | Ruta | Uso |
 |---|---|---|
-| POST | `/v1/ine/extraer` | Extrae una INE (PDF/imagen). Devuelve el JSON y su `id` |
-| GET | `/v1/ine/extracciones?estado=revisar&q=perez&curp=...` | Historial con filtros |
-| GET | `/v1/ine/extracciones/{id}` | Resultado completo guardado |
+| POST | `/ine` | Extrae una INE. Campo `file` (y opcional `reverso`). Respuesta homologada (abajo) |
+| GET | `/v1/ine/extracciones?estado=revisar&q=perez&curp=...` | Historial con filtros (formato interno) |
+| GET | `/v1/ine/extracciones/{id}` | Resultado completo guardado (formato interno) |
 | PUT | `/v1/ine/extracciones/{id}/revision` | Guarda la corrección humana (`{"datos": {...}, "revisado_por": "..."}`) |
 | GET | `/health` | Estado del modelo y de la base de datos |
 
-`estado` puede ser `ok`, `revisar`, `rechazado` (no es una INE; ver `error`) o `error`.
 Si `API_KEY` está definida, todas (menos `/health`) piden el header `X-API-Key`.
-La base guarda los datos extraídos, nunca las imágenes.
+La base guarda el resultado interno completo, nunca las imágenes.
 
-## Ejemplo de respuesta (resumida)
+## Respuesta de `POST /ine` (formato homologado "API Santander IA")
+
+Toda respuesta, éxito o falla, abre con `codigo`, `estado` y `mensaje`. Se hace `switch` sobre
+`codigo` (estable); `mensaje` es sólo para mostrar.
+
+| `codigo` | `estado` | HTTP | Qué hacer |
+|---:|---|---:|---|
+| 200 | `PROCESADO` | 200 | Todo cuadró: seguir |
+| 210 | `PROCESADO_CON_DISCREPANCIAS` | 200 | Datos que se contradicen: ver `validacion.discrepancias` |
+| 211 | `PROCESADO_CON_AVISOS` | 200 | Nada se contradijo pero algo pide ojo humano: ver `avisos` |
+| 212 | `PROCESADO_INCOMPLETO` | 200 | Quedaron comprobaciones sin correr: ver `validacion.sin_verificar` |
+| 220 | `NO_ES_INE` | 200 | No es una credencial para votar; no se extrajo nada |
+| 221 | `HOJA_EN_BLANCO` | 200 | Sin texto legible: pedir que reescaneen |
+| 222 | `ARCHIVO_CORRUPTO` | 200 | Vacío, dañado, cortado o no es del tipo que dice |
+| 223 | `PDF_PROTEGIDO` | 200 | PDF con contraseña |
+| 224 | `LIMITE_PAGINAS` | 200 | Más de `MAX_PAGINAS_DOCUMENTO` páginas (15) |
+| 400 | `ARCHIVO_NO_SOPORTADO` | 400 | Tipo no soportado (con `SOLO_PDF=true` sólo PDF) |
+| 401 | `NO_AUTORIZADO` | 401 | Falta o no coincide `X-API-Key` |
+| 413 | `ARCHIVO_DEMASIADO_GRANDE` | 413 | Más de `MAX_UPLOAD_MB` |
+| 422 | `PETICION_INVALIDA` | 422 | Falta el campo `file` o la petición viene mal formada |
+| 500 | `ERROR_INTERNO` | 500 | Reportar |
+
+Cuerpo cuando sí es INE: `frente` (lo impreso), `atras.mrz` (TD1, con `digitos_control`,
+`integra` y `origen`), `validacion` (`ok`, `completo`, `coincidencias`, `discrepancias`,
+`sin_verificar`), `avisos` y `clasificacion`. Si un dato no se pudo leer, la llave no aparece.
+Además, como extensiones: `id` (para `/v1/ine/extracciones/{id}`), `confianza` por campo,
+`campos_reconstruidos`, `meta` (tiempos) y `recortes` (si se piden).
+
+Para aprobar automáticamente: `codigo == 200` (equivale a `validacion.ok` y `validacion.completo`
+sin `avisos`).
 
 ```json
 {
-  "estado": "ok",
-  "datos": {
-    "nombre": {"apellido_paterno": "PEREZ", "apellido_materno": "LOPEZ", "nombres": "JUAN", "nombre_completo": "JUAN PEREZ LOPEZ"},
-    "sexo": "H",
-    "fecha_nacimiento": "1985-03-12",
-    "curp": "PELJ850312HDFRPN0X",
-    "clave_elector": "PRLPJN85031209H400",
-    "domicilio": {"calle": "C REFORMA 10", "colonia": "COL CENTRO", "codigo_postal": "06000",
-                  "municipio": "CUAUHTEMOC", "estado": "CIUDAD DE MEXICO", "lineas": ["..."]},
-    "seccion": "1234", "anio_registro": "2003", "anio_registro_sufijo": "02",
-    "vigencia": {"desde": "2020", "hasta": "2030", "vigente": true},
-    "cic": "123456789", "identificador_ciudadano": "567890123", "numero_ocr": "1234567890123",
-    "mrz": ["IDMEX...", "...", "..."], "modelo_credencial": "G/H"
+  "codigo": 200,
+  "estado": "PROCESADO",
+  "mensaje": "El documento se procesó y todas las comprobaciones cuadraron.",
+  "id": "4f1c…",
+  "frente": {
+    "apellido_paterno": "PEREZ", "apellido_materno": "LOPEZ", "nombre": "JUAN CARLOS",
+    "domicilio": {"calle_numero": "C REFORMA 10", "colonia": "COL CENTRO", "codigo_postal": "06000",
+                  "municipio_delegacion": "CUAUHTEMOC", "estado": "CDMX"},
+    "clave_elector": "PRLPJN85031209H400", "curp": "PELJ850312HDFRPN0X",
+    "fecha_nacimiento": "1985-03-12", "sexo": "H", "anio_registro": "2003 02", "seccion": "1234",
+    "vigencia": "2030", "pais": "MEXICO", "formato_credencial": "nuevo",
+    "no_impresos": ["estado_clave", "municipio_clave", "localidad_clave", "anio_emision"]
   },
-  "confianza": {"nombre": "alta", "curp": "alta", "domicilio": "alta", "cic": "alta"},
-  "campos_a_revisar": [],
-  "campos_reconstruidos": [],
-  "validaciones": [{"regla": "mrz_cic", "resultado": "ok"}],
-  "advertencias": [],
-  "meta": {"tiempo_total_ms": 27676, "tiempos_ms": {"ocr_y_recorte": 6000, "vlm_anverso": 21000}}
+  "atras": {"mrz": {
+    "lineas": ["IDMEX…", "…", "PEREZ<LOPEZ<<JUAN<CARLOS<<<<<<"], "tipo_documento": "ID", "pais_emisor": "MEX",
+    "cic": "123456789", "folio": "123456789", "seccion": "1234", "identificador_ciudadano": "567890123",
+    "nacionalidad": "MEX", "fecha_nacimiento": "1985-03-12", "sexo": "H", "vigencia": "2030-12-31",
+    "apellido_paterno": "PEREZ", "apellido_materno": "LOPEZ", "nombres": "JUAN CARLOS",
+    "digitos_control": {"cic": true, "fecha_nacimiento": true, "vigencia": true, "compuesto": true},
+    "integra": true, "origen": "texto"
+  }},
+  "validacion": {"ok": true, "completo": true,
+                 "coincidencias": ["MRZ (dígitos de control)", "apellidos y nombre (MRZ)", "clave_elector vs CURP (iniciales)", "…"],
+                 "discrepancias": [], "sin_verificar": []},
+  "avisos": [],
+  "clasificacion": {"categoria": "ine", "confianza": null, "caracteres_leidos": 640, "senales": ["encabezado", "mrz_mexicana"]},
+  "confianza": {"nombre": "alta", "curp": "alta", "cic": "alta"},
+  "meta": {"tiempo_total_ms": 9200, "tiempos_ms": {"ocr_y_recorte": 3200, "vlm_anverso": 5600}}
 }
 ```
 

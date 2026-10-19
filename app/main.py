@@ -2,14 +2,18 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import pipeline
 from .config import get_settings
 from .db import Database, Extraccion
 from .documents import PDF_MAGIC
 from .ocr import engine
-from .schemas import ExtraccionDetalle, ExtraccionResumen, ListaExtracciones, ResultadoINE, Revision
+from .respuesta import MENSAJES, construir, http_status, sobre
+from .schemas import ExtraccionDetalle, ExtraccionResumen, ListaExtracciones, Revision
 from .vlm import VlmClient
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -53,7 +57,29 @@ app = FastAPI(
 def check_api_key(x_api_key: str | None = Header(default=None)) -> None:
     expected = get_settings().api_key
     if expected and x_api_key != expected:
-        raise HTTPException(status_code=401, detail="API key inválida")
+        raise HTTPException(status_code=401, detail=MENSAJES[401])
+
+
+# ------------------------------------------------------------------ errores con el mismo sobre
+# Toda respuesta abre con codigo / estado / mensaje, también las fallas (404, 422, 500...).
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    mensaje = exc.detail if isinstance(exc.detail, str) and exc.detail not in ("Not Found", "Method Not Allowed") else None
+    return JSONResponse(sobre(exc.status_code, mensaje), status_code=exc.status_code)
+
+
+@app.exception_handler(RequestValidationError)
+async def _invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
+    errores = [f"{'.'.join(str(x) for x in e.get('loc', []) if x != 'body')}: {e.get('msg')}" for e in exc.errors()]
+    return JSONResponse(sobre(422, f"{MENSAJES[422]} {'; '.join(errores)}"), status_code=422)
+
+
+@app.exception_handler(Exception)
+async def _internal_error(request: Request, exc: Exception) -> JSONResponse:
+    log.exception("Error no controlado")
+    return JSONResponse(sobre(500), status_code=500)
 
 
 @app.get("/health")
@@ -65,30 +91,64 @@ async def health():
             "base_de_datos": app.state.db is not None}
 
 
-async def _read(f: UploadFile) -> bytes:
-    limit = get_settings().max_upload_mb * 1024 * 1024
+# Tipos aceptados (por contenido, no por el nombre): PDF y, si SOLO_PDF=false, imágenes
+_IMAGE_MAGIC = (b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n", b"II*\x00", b"MM\x00*", b"BM")
+
+
+def _tipo(data: bytes) -> str | None:
+    if PDF_MAGIC in data[:1024]:
+        return "pdf"
+    if data.startswith(_IMAGE_MAGIC) or (data[:4] == b"RIFF" and data[8:12] == b"WEBP"):
+        return "imagen"
+    return None
+
+
+async def _read(f: UploadFile) -> bytes | JSONResponse:
+    """Lee el archivo; si no se puede procesar devuelve directamente la respuesta (400/413/222)."""
+    s = get_settings()
+    limit = s.max_upload_mb * 1024 * 1024
     data = await f.read(limit + 1)
     if len(data) > limit:
-        raise HTTPException(status_code=413, detail=f"{f.filename}: excede {get_settings().max_upload_mb} MB")
+        return JSONResponse(sobre(413, f"{f.filename}: excede {s.max_upload_mb} MB"), status_code=413)
     if not data:
-        raise HTTPException(status_code=400, detail=f"{f.filename}: archivo vacío")
-    if get_settings().solo_pdf and PDF_MAGIC not in data[:1024]:
-        raise HTTPException(status_code=415, detail=f"{f.filename}: sólo se aceptan archivos PDF")
+        return JSONResponse(sobre(222, f"{f.filename}: el archivo llegó vacío"))
+    tipo = _tipo(data)
+    dice_pdf = (f.content_type == "application/pdf") or (f.filename or "").lower().endswith(".pdf")
+    if dice_pdf and tipo != "pdf":
+        return JSONResponse(sobre(222, f"{f.filename}: dice ser PDF pero su contenido es otra cosa"))
+    if tipo is None or (s.solo_pdf and tipo != "pdf"):
+        permitidos = "PDF" if s.solo_pdf else "PDF, JPEG, PNG, TIFF o WEBP"
+        return JSONResponse(sobre(400, f"{f.filename}: tipo no soportado; se acepta {permitidos}"), status_code=400)
     return data
 
 
-@app.post("/v1/ine/extraer", response_model=ResultadoINE, response_model_exclude_none=False,
-          dependencies=[Depends(check_api_key)])
-async def extraer(
-    archivo: UploadFile = File(..., description="PDF con anverso (y opcionalmente reverso)"),
-    reverso: UploadFile | None = File(None, description="Reverso, si viene en un archivo aparte"),
-    incluir_recortes: bool = Query(False, description="Devuelve los recortes en base64 (PNG) para revisión"),
-) -> ResultadoINE:
-    files = [await _read(archivo)]
-    if reverso is not None:
-        files.append(await _read(reverso))
+_EJEMPLO = {"codigo": 200, "estado": "PROCESADO", "mensaje": MENSAJES[200],
+            "frente": {"apellido_paterno": "RAMIREZ", "nombre": "ANA LUCIA", "curp": "RASA880315MDFMLN04"},
+            "atras": {"mrz": {"cic": "123456789", "integra": True}},
+            "validacion": {"ok": True, "completo": True, "coincidencias": ["MRZ (dígitos de control)"],
+                           "discrepancias": [], "sin_verificar": []},
+            "avisos": [], "clasificacion": {"categoria": "ine", "confianza": None}}
+
+
+@app.post("/ine", dependencies=[Depends(check_api_key)], response_class=JSONResponse,
+          summary="Extrae los datos de una credencial INE",
+          responses={200: {"description": "Desenlace en `codigo` (200, 210-212, 220-224)",
+                           "content": {"application/json": {"example": _EJEMPLO}}}})
+async def ine(
+    file: UploadFile = File(..., description="PDF con anverso y reverso (o sólo el anverso)"),
+    reverso: UploadFile | None = File(None, description="Opcional: reverso, si viene en un archivo aparte"),
+    incluir_recortes: bool = Query(False, description="Agrega `recortes` (PNG en base64) para revisión"),
+) -> JSONResponse:
+    files = []
+    for f in (file, reverso):
+        if f is None:
+            continue
+        data = await _read(f)
+        if isinstance(data, JSONResponse):
+            return data
+        files.append(data)
     async with app.state.sem:
-        result = await pipeline.process(files, app.state.vlm, archivo.filename, include_crops=incluir_recortes)
+        result = await pipeline.process(files, app.state.vlm, file.filename, include_crops=incluir_recortes)
     log.info("archivo procesado estado=%s tiempo_ms=%s revisar=%s", result.estado,
              result.meta.tiempo_total_ms if result.meta else None, result.campos_a_revisar)
     if app.state.db is not None and get_settings().guardar_resultados:
@@ -97,9 +157,8 @@ async def extraer(
         except Exception:  # noqa: BLE001  (no perder la extracción si falla el guardado)
             log.exception("No se pudo guardar el resultado")
             result.advertencias.append("No se pudo guardar el resultado en la base de datos")
-    if result.estado == "error":
-        raise HTTPException(status_code=422, detail=result.error)
-    return result
+    body = construir(result, get_settings().revisar_reconstruidos)
+    return JSONResponse(body, status_code=http_status(body["codigo"]))
 
 
 # ------------------------------------------------------------------ historial

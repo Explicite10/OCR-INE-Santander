@@ -73,6 +73,9 @@ class Meta(BaseModel):
     recorte_reverso: str | None = None
     mrz_fuente: str | None = None
     senales_ine: list[str] = Field(default_factory=list, description="Indicios de que es una INE (OCR)")
+    caracteres_leidos: int = Field(0, description="Letras y dígitos que leyó el OCR en todo el documento")
+    categoria: Literal["ine", "otro", "hoja_en_blanco"] | None = None
+    documento_detectado: str | None = Field(None, description="Si no es INE: qué parece (pasaporte, licencia...)")
 
 
 class ResultadoINE(BaseModel):
@@ -88,6 +91,7 @@ class ResultadoINE(BaseModel):
     validaciones: list[Validacion] = Field(default_factory=list)
     advertencias: list[str] = Field(default_factory=list)
     error: str | None = None
+    error_codigo: int | None = Field(None, description="222 corrupto · 223 con contraseña · 224 demasiadas páginas")
     meta: Meta | None = None
     recortes: dict[str, str] | None = Field(None, description="PNG en base64 (sólo si se pide)")
 

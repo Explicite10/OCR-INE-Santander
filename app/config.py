@@ -35,9 +35,10 @@ class Settings(BaseSettings):
 
     # --- Documento ---
     render_dpi: int = 250
-    max_pages: int = 4
+    max_pages: int = 4  # páginas que se renderizan (la credencial viene al principio)
+    max_paginas_documento: int = 15  # un PDF con más páginas se rechaza (código 224)
     max_upload_mb: int = 25
-    solo_pdf: bool = True  # la API rechaza (415) cualquier archivo que no sea PDF
+    solo_pdf: bool = True  # la API rechaza (400) cualquier archivo que no sea PDF
 
     # Si un campo se reconstruyó (p. ej. CURP tapada por un sello) el documento va a revisión.
     revisar_reconstruidos: bool = True
