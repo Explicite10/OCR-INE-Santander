@@ -246,10 +246,12 @@ def validacion(r: ResultadoINE) -> dict:
             if fuentes and fuentes <= _READERS and len(fuentes) == 1:
                 coincidencias.append(label)
                 continue
-        if c.resultado == "falla" and regla in ("seccion_vs_mrz", "anio_registro_sufijo_vs_mrz") and mrz_integra:
-            # La MRZ íntegra (dígito compuesto) respalda el dato y es el que se entrega: lo que difiere es
-            # la lectura del anverso. Se avisa en vez de acusar al documento.
-            campo = "seccion" if regla == "seccion_vs_mrz" else "anio_registro"
+        if (c.resultado == "falla" and regla in ("seccion_vs_mrz", "anio_registro_sufijo_vs_mrz", "vigencia_vs_mrz")
+                and mrz_integra):
+            # La MRZ íntegra (dígitos verificadores) respalda el dato y es el que se entrega: lo que difiere
+            # es la lectura del anverso. Se avisa en vez de acusar al documento.
+            campo = {"seccion_vs_mrz": "seccion", "anio_registro_sufijo_vs_mrz": "anio_registro",
+                     "vigencia_vs_mrz": "vigencia"}[regla]
             avisos_extra.append(f"frente.{campo}: el anverso se leyó distinto que la MRZ ({c.detalle}); "
                                 "se entrega el de la MRZ, respaldado por su dígito verificador")
             continue

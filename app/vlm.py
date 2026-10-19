@@ -183,7 +183,9 @@ class VlmClient:
             "stream": False,
             "format": schema,
             "keep_alive": "30m",
-            "options": {"temperature": 0, "num_ctx": self.s.vlm_num_ctx, "num_predict": 800},
+            # temperature 0 + semilla fija: la misma imagen da la misma lectura lo más posible
+            # (en GPU puede quedar una variación mínima entre corridas)
+            "options": {"temperature": 0, "seed": 0, "num_ctx": self.s.vlm_num_ctx, "num_predict": 800},
             "messages": [{"role": "user", "content": prompt, "images": [b64]}],
         }
         if self.s.vlm_think is not None:
@@ -196,6 +198,7 @@ class VlmClient:
         payload = {
             "model": self.s.vlm_model,
             "temperature": 0,
+            "seed": 0,
             "max_tokens": 800,
             "response_format": {"type": "json_schema",
                                 "json_schema": {"name": "ine", "schema": schema, "strict": True}},

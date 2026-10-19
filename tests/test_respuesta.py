@@ -203,3 +203,9 @@ def test_seccion_distinta_de_la_mrz_verificada_es_aviso():
     assert body["frente"]["seccion"] == "1234" and body["codigo"] == 211
     assert not body["validacion"]["discrepancias"]
     assert any(a.startswith("frente.seccion:") for a in body["avisos"])
+
+
+def test_vigencia_distinta_de_la_mrz_verificada_es_aviso():
+    body = respuesta.construir(resultado(vlm=vlm_front(vigencia="2020 - 2031")))
+    assert body["frente"]["vigencia"] == "2030" and not body["validacion"]["discrepancias"]
+    assert any(a.startswith("frente.vigencia:") for a in body["avisos"])
