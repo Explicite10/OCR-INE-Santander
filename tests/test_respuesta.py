@@ -184,3 +184,22 @@ def test_regla_de_iniciales_que_no_aplica_es_sin_verificar():
     v = body["validacion"]
     assert not v["discrepancias"] and body["codigo"] == 212
     assert any("regla de iniciales" in x for x in v["sin_verificar"])
+
+
+def test_clave_con_maria_sin_saltar_cuadra_con_la_curp():
+    """La CURP salta MARIA (toma la G de GUADALUPE); la clave a veces usa las letras de MARIA."""
+    curp = make_curp("PELG850312MDFRPD0")
+    clave = "PRLPMR85031209M400"
+    m = mrz.parse(make_mrz(sexo="M", nombre="PEREZ<LOPEZ<<MARIA<GUADALUPE"))
+    body = respuesta.construir(resultado(
+        vlm=vlm_front(nombres="MARIA GUADALUPE", sexo="M", curp=curp, clave_elector=clave),
+        ocr=ocr_front(nombre_lineas=["PEREZ", "LOPEZ", "MARIA GUADALUPE"], curp=curp, clave_elector=clave), m=m))
+    assert "clave_elector vs CURP (iniciales)" in body["validacion"]["coincidencias"]
+    assert body["codigo"] == 200
+
+
+def test_seccion_distinta_de_la_mrz_verificada_es_aviso():
+    body = respuesta.construir(resultado(vlm=vlm_front(seccion="1243")))
+    assert body["frente"]["seccion"] == "1234" and body["codigo"] == 211
+    assert not body["validacion"]["discrepancias"]
+    assert any(a.startswith("frente.seccion:") for a in body["avisos"])

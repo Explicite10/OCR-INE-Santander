@@ -597,6 +597,13 @@ class Merger:
             exp = d.curp[0] + d.curp[13] + d.curp[2] + d.curp[14] + d.curp[3] + d.curp[15]
             got = d.clave_elector[:6]
             ok = all(e == g or e == "X" for e, g in zip(exp, got))
+            if not ok and all(e == g or e == "X" for e, g in zip(exp[:4], got[:4])) and n.nombres:
+                # La CURP siempre salta MARIA / JOSE como primer nombre; la clave de elector a veces no
+                # (en el lote, 5 credenciales usan las letras de MARIA / JOSE): también es válido.
+                sin_saltar = v.clave_name_prefix(n.apellido_paterno, n.apellido_materno, n.nombres,
+                                                 skip_common_first=False)
+                ok = bool(sin_saltar) and sin_saltar[4:] == got[4:] and sin_saltar[4:] != (
+                    v.clave_name_prefix(n.apellido_paterno, n.apellido_materno, n.nombres) or "")[4:]
             self._check("clave_elector_vs_curp_iniciales", ok, None if ok else f"clave '{got}' vs CURP '{exp}'")
             ok = d.curp[4:10] == d.clave_elector[6:12] and d.curp[10] == d.clave_elector[14]
             self._check("curp_vs_clave_elector", ok, "fecha y sexo")
