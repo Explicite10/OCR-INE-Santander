@@ -44,10 +44,17 @@ async def lifespan(app: FastAPI):
 
 
 _s = get_settings()
+_TAGS = [
+    {"name": "Credencial INE", "description": "Endpoint principal. Usar este en los sistemas que consumen la API."},
+    {"name": "Historial y revisión", "description": "Consulta de extracciones guardadas y captura de la revisión humana."},
+    {"name": "Sistema", "description": "Estado del servicio."},
+]
 app = FastAPI(
-    title="INE OCR API",
+    title="OCR Credencial para Votar INE - Open Source",
     version="1.0.0",
-    description="Extracción estructurada de datos de credenciales INE (anverso y reverso).",
+    description="Extracción de la credencial para votar del INE (anverso y reverso) con PaddleOCR + Qwen3-VL "
+                "y validación contra MRZ, CURP y clave de elector.",
+    openapi_tags=_TAGS,
     lifespan=lifespan,
     docs_url="/docs" if _s.enable_docs else None,
     redoc_url=None,
@@ -93,7 +100,7 @@ async def _internal_error(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(sobre(500), status_code=500)
 
 
-@app.get("/health")
+@app.get("/health", tags=["Sistema"], summary="Estado del servicio")
 async def health():
     s = get_settings()
     vlm_ok = await app.state.vlm.health() if app.state.vlm else None
@@ -141,8 +148,8 @@ _EJEMPLO = {"codigo": 200, "estado": "PROCESADO", "mensaje": MENSAJES[200],
             "avisos": [], "clasificacion": {"categoria": "ine", "confianza": None}}
 
 
-@app.post("/ine", dependencies=[Depends(check_api_key)], response_class=JSONResponse,
-          summary="Extrae los datos de una credencial INE",
+@app.post("/ine", dependencies=[Depends(check_api_key)], response_class=JSONResponse, tags=["Credencial INE"],
+          summary="Extrae los datos de una credencial INE y los valida contra MRZ, CURP y clave de elector",
           responses={200: {"description": "Desenlace en `codigo` (200, 210-212, 220-224)",
                            "content": {"application/json": {"example": _EJEMPLO}}},
                      **_error_doc(400, 401, 413, 422, 500)})
@@ -182,7 +189,7 @@ def _resumen(r: Extraccion) -> ExtraccionResumen:
 
 
 @app.get("/v1/ine/extracciones", response_model=ListaExtracciones, dependencies=[Depends(check_api_key)],
-         responses=_error_doc(401, 503))
+         responses=_error_doc(401, 503), tags=["Historial y revisión"], summary="Lista las extracciones guardadas")
 async def listar(
     estado: str | None = Query(None, description="ok | revisar | error | revisado"),
     curp: str | None = None,
@@ -195,7 +202,7 @@ async def listar(
 
 
 @app.get("/v1/ine/extracciones/{id_}", response_model=ExtraccionDetalle, dependencies=[Depends(check_api_key)],
-         responses=_error_doc(401, 404))
+         responses=_error_doc(401, 404), tags=["Historial y revisión"], summary="Detalle de una extracción")
 async def detalle(id_: str) -> ExtraccionDetalle:
     r = await _db().get(id_)
     if r is None:
@@ -206,7 +213,8 @@ async def detalle(id_: str) -> ExtraccionDetalle:
 
 
 @app.put("/v1/ine/extracciones/{id_}/revision", response_model=ExtraccionDetalle,
-         dependencies=[Depends(check_api_key)], responses=_error_doc(401, 404))
+         dependencies=[Depends(check_api_key)], responses=_error_doc(401, 404), tags=["Historial y revisión"],
+         summary="Guarda la revisión humana de una extracción")
 async def revisar(id_: str, revision: Revision = Body(...)) -> ExtraccionDetalle:
     """Guarda los datos corregidos por una persona y marca la extracción como 'revisado'."""
     r = await _db().review(id_, revision.datos, revision.revisado_por)

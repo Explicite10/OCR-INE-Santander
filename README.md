@@ -1,4 +1,4 @@
-# INE OCR API
+# OCR Credencial para Votar INE - Open Source
 
 API en FastAPI que extrae los datos del **anverso y reverso** de credenciales INE
 (PDF; fotocopias en blanco y negro, con sellos) y devuelve un JSON
