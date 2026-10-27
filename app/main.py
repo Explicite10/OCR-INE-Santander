@@ -2,18 +2,18 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Body, Depends, FastAPI, File, HTTPException, Query, Request, Security, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Query, Request, Security, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import pipeline
+from . import pipeline, plan
 from .config import get_settings
 from .db import Database, Extraccion
 from .documents import PDF_MAGIC
 from .ocr import engine
-from .respuesta import ESTADOS, MENSAJES, construir, http_status, sobre
+from .respuesta import ESTADOS, MENSAJES, con_plan, construir, http_status, sobre
 from .schemas import ExtraccionDetalle, ExtraccionResumen, ListaExtracciones, Revision
 from .vlm import VlmClient
 
@@ -145,17 +145,38 @@ _EJEMPLO = {"codigo": 200, "estado": "PROCESADO", "mensaje": MENSAJES[200],
             "atras": {"mrz": {"cic": "123456789", "integra": True}},
             "validacion": {"ok": True, "completo": True, "coincidencias": ["MRZ (dígitos de control)"],
                            "discrepancias": [], "sin_verificar": []},
-            "avisos": [], "clasificacion": {"categoria": "ine", "confianza": None}}
+            "avisos": [], "clasificacion": {"categoria": "ine", "confianza": None},
+            "validacion_plan": {"cumple": False, "mensaje": plan.MENSAJE_RECHAZO,
+                                "motivos_rechazo": ["¿La CURP coincide? NO: La CURP no coincide: credencial "
+                                                    "'RASA880315MDFMLN04' vs solicitud 'RASA880315MDFMLN05'."],
+                                "regla_vigencia": "anio", "validaciones": [
+                                    {"id": "curp_coincide", "pregunta": "¿La CURP coincide?", "resultado": "NO",
+                                     "ok": False, "detalle": "La CURP no coincide: credencial 'RASA880315MDFMLN04' "
+                                                             "vs solicitud 'RASA880315MDFMLN05'."}]}}
+
+_D_NOMBRE = ("Nombre completo capturado en la solicitud, en cualquier orden. "
+             "Alternativa: apellido_paterno, apellido_materno y nombres.")
+_D_CURP = "CURP capturada en la solicitud."
+_D_FECHA = "Fecha de nacimiento capturada: AAAA-MM-DD (también acepta DD/MM/AAAA)."
 
 
 @app.post("/ine", dependencies=[Depends(check_api_key)], response_class=JSONResponse, tags=["Credencial INE"],
-          summary="Extrae los datos de una credencial INE y los valida contra MRZ, CURP y clave de elector",
+          summary="Extrae los datos de una credencial INE y valida contra la solicitud",
+          description="Los datos de la solicitud son opcionales; con ellos `validacion_plan` responde las 7 "
+                      "preguntas del plan de atención (hoja en blanco, ilegible, es INE, vigencia, nombre, "
+                      "CURP y fecha de nacimiento).",
           responses={200: {"description": "Desenlace en `codigo` (200, 210-212, 220-224)",
                            "content": {"application/json": {"example": _EJEMPLO}}},
                      **_error_doc(400, 401, 413, 422, 500)})
 async def ine(
     file: UploadFile = File(..., description="PDF con la credencial (anverso y reverso)"),
+    nombre: str | None = Form(None, description=_D_NOMBRE),
+    apellido_paterno: str | None = Form(None), apellido_materno: str | None = Form(None),
+    nombres: str | None = Form(None), curp: str | None = Form(None, description=_D_CURP),
+    fecha_nacimiento: str | None = Form(None, description=_D_FECHA),
 ) -> JSONResponse:
+    solicitud = plan.Solicitud(nombre=nombre, apellido_paterno=apellido_paterno, apellido_materno=apellido_materno,
+                               nombres=nombres, curp=curp, fecha_nacimiento=fecha_nacimiento)
     data = await _read(file)
     if isinstance(data, JSONResponse):
         return data
@@ -169,7 +190,8 @@ async def ine(
         except Exception:  # noqa: BLE001  (no perder la extracción si falla el guardado)
             log.exception("No se pudo guardar el resultado")
             result.advertencias.append("No se pudo guardar el resultado en la base de datos")
-    body = construir(result, get_settings().revisar_reconstruidos)
+    body = con_plan(construir(result, get_settings().revisar_reconstruidos), solicitud)
+    log.info("codigo=%s cumple_plan=%s", body["codigo"], body.get("validacion_plan", {}).get("cumple"))
     return JSONResponse(body, status_code=http_status(body["codigo"]))
 
 

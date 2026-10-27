@@ -87,8 +87,13 @@ cp .env.example .env
 ```
 
 ```bash
-curl -X POST localhost:8000/ine -F "file=@ine.pdf;type=application/pdf"
+curl -X POST localhost:8000/ine -H "X-API-Key: <API_KEY>" -F "file=@ine.pdf;type=application/pdf" \
+     -F "nombre=Juan Carlos Perez Lopez" -F "curp=PELJ850312HDFRPN0X" -F "fecha_nacimiento=1985-03-12"
 ```
+
+Los campos de texto son los **datos capturados en la solicitud** (todos opcionales): `nombre` (o `apellido_paterno`,
+`apellido_materno`, `nombres`), `curp` y `fecha_nacimiento` (AAAA-MM-DD o DD/MM/AAAA). Con ellos la respuesta
+contesta las validaciones del plan de atención (`validacion_plan`).
 
 - Documentación interactiva: http://localhost:8000/docs
 
@@ -164,7 +169,7 @@ El lote comparte el modelo con producción: córrelo fuera de horario o con `--c
 
 | Método | Ruta | Uso |
 |---|---|---|
-| POST | `/ine` | Extrae una INE. Campo `file` (un PDF). Respuesta homologada (abajo) |
+| POST | `/ine` | Extrae una INE. Campo `file` (un PDF) y, opcionales, los datos de la solicitud. Respuesta homologada (abajo) |
 | GET | `/v1/ine/extracciones?estado=revisar&q=perez&curp=...` | Historial con filtros (formato interno) |
 | GET | `/v1/ine/extracciones/{id}` | Resultado completo guardado (formato interno) |
 | PUT | `/v1/ine/extracciones/{id}/revision` | Guarda la corrección humana (`{"datos": {...}, "revisado_por": "..."}`) |
@@ -233,9 +238,39 @@ sin `avisos`).
   "avisos": [],
   "clasificacion": {"categoria": "ine", "confianza": null, "caracteres_leidos": 640, "senales": ["encabezado", "mrz_mexicana"]},
   "confianza": {"nombre": "alta", "curp": "alta", "cic": "alta"},
-  "meta": {"tiempo_total_ms": 9200, "tiempos_ms": {"ocr_y_recorte": 3200, "vlm_anverso": 5600}}
+  "meta": {"tiempo_total_ms": 9200, "tiempos_ms": {"ocr_y_recorte": 3200, "vlm_anverso": 5600}},
+  "validacion_plan": {"cumple": true, "mensaje": "Documento válido: cumple con todas las validaciones.", "motivos_rechazo": [],
+                      "regla_vigencia": "anio", "validaciones": ["…"]}
 }
 ```
+
+### `validacion_plan`: plan de atención (sección INE)
+
+Siempre que se evaluó el documento (códigos 200-221) la respuesta agrega `validacion_plan`, con la misma forma que
+en las APIs de forma migratoria (`OCR-INM-OpenSource` y `OCR-INM-DocumentAI`) y las 7 preguntas del "Plan de
+atención - Validación documental" en este orden: `hoja_en_blanco`, `imagen_ilegible`, `es_ine`, `vigente`,
+`nombre_coincide`, `curp_coincide`, `fecha_nacimiento_coincide`. Cada una responde `SI` / `NO`, o `NO_VERIFICADO`
+cuando falta el dato de la solicitud o no se pudo leer en la credencial (bloquea). A diferencia de forma migratoria
+y pasaporte, el plan no exime la CURP en INE: si la solicitud no la trae, `curp_coincide` queda en `NO_VERIFICADO`.
+
+```json
+"validacion_plan": {
+  "cumple": false, "mensaje": "Revisar documento y motivo de rechazo",
+  "motivos_rechazo": ["¿La fecha de nacimiento coincide? NO: La fecha de nacimiento no coincide: credencial 1985-03-12 vs solicitud 1985-03-13."],
+  "regla_vigencia": "anio",
+  "validaciones": [{"id": "hoja_en_blanco", "pregunta": "¿Es una hoja en blanco?", "resultado": "NO", "ok": true, "detalle": "El documento tiene contenido."}, "..."]
+}
+```
+
+`cumple` sólo es `true` si pasan las 7; si no, `mensaje` es "Revisar documento y motivo de rechazo" y
+`motivos_rechazo` lista las que fallaron. El nombre se compara sin importar orden, acentos ni mayúsculas; la CURP
+acepta hasta 2 caracteres que el OCR confunde (0/O, 1/I…) si la capturada cuadra con la fecha de nacimiento y el
+sexo de la credencial. La vigencia se toma de la MRZ si su dígito de control cuadra (si no, del año impreso) y se
+evalúa con `REGLA_VIGENCIA`: `anio` (año de vigencia >= año actual, como pide el plan) o `fecha` (vence el 31 de
+diciembre del año de vigencia). `codigo` habla de la calidad de la extracción y `validacion_plan.cumple` de si el
+documento coincide con la solicitud: son independientes.
+
+La "validación ante lista nominal" del plan es una consulta al INE y no la hace este servicio.
 
 ## Privacidad
 

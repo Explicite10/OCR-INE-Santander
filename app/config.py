@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # Si un campo se reconstruyó (p. ej. CURP tapada por un sello) el documento va a revisión.
     revisar_reconstruidos: bool = True
 
+    # Plan de atención: "anio" (año de vigencia >= año actual, como pide el plan) o "fecha" (vencimiento >= hoy)
+    regla_vigencia: Literal["anio", "fecha"] = "anio"
+
     # Rechazar documentos que no parecen una credencial INE mexicana (estado "rechazado").
     # Antes del VLM sólo se rechaza lo que claramente es OTRO documento (licencia, pasaporte, RFC...).
     # Sin señales de INE en el OCR (encabezado +3, MRZ mexicana +3, cada etiqueta +1; menos de

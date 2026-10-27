@@ -109,11 +109,30 @@ def test_ruta_vieja_ya_no_existe(client):
     assert client.post("/v1/ine/extraer", files=PDF, headers=H).status_code == 404
 
 
-def test_ine_solo_recibe_file(client):
+def test_ine_recibe_file_y_datos_de_la_solicitud(client):
     from app.main import app as fastapi_app
 
     op = fastapi_app.openapi()["paths"]["/ine"]["post"]
     assert "parameters" not in op  # sin incluir_recortes
     schema_ref = op["requestBody"]["content"]["multipart/form-data"]["schema"]["$ref"].split("/")[-1]
-    props = fastapi_app.openapi()["components"]["schemas"][schema_ref]["properties"]
-    assert list(props) == ["file"]  # sin reverso
+    schema = fastapi_app.openapi()["components"]["schemas"][schema_ref]
+    assert list(schema["properties"]) == ["file", "nombre", "apellido_paterno", "apellido_materno", "nombres",
+                                          "curp", "fecha_nacimiento"]  # sin reverso
+    assert schema["required"] == ["file"]
+
+
+def test_ine_con_solicitud_trae_validacion_plan(client, monkeypatch):
+    import app.main as main
+    from tests.test_respuesta import resultado
+
+    async def fake_process(files, vlm, filename=None, include_crops=False):
+        return resultado()
+
+    monkeypatch.setattr(main.pipeline, "process", fake_process)
+    datos = {"nombre": "Juan Carlos Pérez López", "curp": resultado().datos.curp, "fecha_nacimiento": "12/03/1985"}
+    body = client.post("/ine", files=PDF, data=datos, headers=H).json()
+    vp = body["validacion_plan"]
+    assert body["codigo"] == 200 and vp["cumple"] is True and len(vp["validaciones"]) == 7
+    body = client.post("/ine", files=PDF, data={"fecha_nacimiento": "1990-01-01"}, headers=H).json()
+    assert body["validacion_plan"]["cumple"] is False
+    assert body["validacion_plan"]["mensaje"] == "Revisar documento y motivo de rechazo"

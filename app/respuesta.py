@@ -15,6 +15,8 @@ Reglas del formato:
 from datetime import date
 
 from . import mrz as mrzmod
+from . import plan
+from .config import get_settings
 from .schemas import ResultadoINE
 
 ESTADOS = {
@@ -362,6 +364,15 @@ def construir(r: ResultadoINE, revisar_reconstruidos: bool = True) -> dict:
                      "recorte_anverso": meta.recorte_anverso, "recorte_reverso": meta.recorte_reverso})
         if meta else None,
     )
+
+
+def con_plan(body: dict, solicitud: plan.Solicitud) -> dict:
+    """Agrega `validacion_plan` (7 preguntas del plan de atención) siempre que se evaluó el documento."""
+    categoria = (body.get("clasificacion") or {}).get("categoria")
+    if categoria:
+        body["validacion_plan"] = plan.evaluar(categoria, body.get("frente"), (body.get("atras") or {}).get("mrz"),
+                                               solicitud, get_settings().regla_vigencia)
+    return body
 
 
 def _mensaje_error(r: ResultadoINE) -> str:
