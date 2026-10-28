@@ -116,6 +116,7 @@ que más fallan). Es reanudable: si se corta, vuelve a correrlo y continúa.
 ```
 
 Muestra la exactitud por campo y por nivel de confianza (lo clave: que `alta` sea ~100 %).
+Resultado de la última medición (58 credenciales, 27-oct-2026): [docs/EVALUACION.md](docs/EVALUACION.md).
 
 **Pruebas**
 

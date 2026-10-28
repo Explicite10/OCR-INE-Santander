@@ -1,0 +1,984 @@
+{
+  "200": {
+    "codigo": 200,
+    "estado": "PROCESADO",
+    "mensaje": "El documento se procesó y todas las comprobaciones cuadraron.",
+    "frente": {
+      "apellido_paterno": "PEREZ",
+      "apellido_materno": "LOPEZ",
+      "nombre": "JUAN CARLOS",
+      "domicilio": {
+        "calle_numero": "C REFORMA 10",
+        "colonia": "COL CENTRO",
+        "codigo_postal": "06000",
+        "municipio_delegacion": "CUAUHTEMOC",
+        "estado": "CDMX"
+      },
+      "clave_elector": "PRLPJN85031209H400",
+      "curp": "PELJ850312HDFRPN05",
+      "fecha_nacimiento": "1985-03-12",
+      "sexo": "H",
+      "anio_registro": "2003 02",
+      "seccion": "1234",
+      "vigencia": "2030",
+      "pais": "MEXICO",
+      "formato_credencial": "nuevo",
+      "no_impresos": [
+        "estado_clave",
+        "municipio_clave",
+        "localidad_clave",
+        "anio_emision"
+      ]
+    },
+    "atras": {
+      "mrz": {
+        "lineas": [
+          "IDMEX1234567897<<1234567890123",
+          "8503127H3012316MEX<02<<12345<6",
+          "PEREZ<LOPEZ<<JUAN<CARLOS<<<<<<"
+        ],
+        "tipo_documento": "ID",
+        "pais_emisor": "MEX",
+        "cic": "123456789",
+        "folio": "123456789",
+        "seccion": "1234",
+        "identificador_ciudadano": "567890123",
+        "nacionalidad": "MEX",
+        "fecha_nacimiento": "1985-03-12",
+        "sexo": "H",
+        "vigencia": "2030-12-31",
+        "apellido_paterno": "PEREZ",
+        "apellido_materno": "LOPEZ",
+        "nombres": "JUAN CARLOS",
+        "digitos_control": {
+          "cic": true,
+          "fecha_nacimiento": true,
+          "vigencia": true,
+          "compuesto": true
+        },
+        "integra": true,
+        "origen": "texto"
+      }
+    },
+    "validacion": {
+      "ok": true,
+      "completo": true,
+      "coincidencias": [
+        "MRZ (dígitos de control)",
+        "apellidos y nombre (MRZ)",
+        "curp (estructura y dígito verificador)",
+        "clave_elector (estructura)",
+        "fecha_nacimiento (MRZ, CURP, clave_elector)",
+        "sexo (MRZ, CURP, clave_elector)",
+        "domicilio (código postal)",
+        "domicilio (estado)",
+        "seccion (MRZ)",
+        "anio_registro (MRZ)",
+        "vigencia (MRZ)",
+        "nombre vs CURP (iniciales)",
+        "nombre vs clave_elector (iniciales)",
+        "nombre vs CURP (consonantes)",
+        "clave_elector vs CURP (iniciales)",
+        "clave_elector vs CURP (fecha y sexo)",
+        "fecha_nacimiento (CURP vs MRZ)"
+      ],
+      "discrepancias": [],
+      "sin_verificar": []
+    },
+    "avisos": [],
+    "clasificacion": {
+      "categoria": "ine",
+      "confianza": null,
+      "caracteres_leidos": 640,
+      "senales": [
+        "encabezado"
+      ]
+    },
+    "confianza": {
+      "cic": "alta",
+      "identificador_ciudadano": "alta",
+      "nombre": "alta",
+      "curp": "alta",
+      "clave_elector": "alta",
+      "fecha_nacimiento": "alta",
+      "sexo": "alta",
+      "domicilio": "alta",
+      "seccion": "alta",
+      "anio_registro": "media",
+      "vigencia": "alta"
+    },
+    "meta": {
+      "tiempo_total_ms": 9200,
+      "tiempos_ms": {
+        "render": 120,
+        "ocr_y_recorte": 3200,
+        "vlm_anverso": 5600
+      },
+      "modelo_vlm": "qwen3-vl:8b-instruct",
+      "paginas": 1,
+      "recorte_anverso": "ancla",
+      "recorte_reverso": "ancla"
+    },
+    "validacion_plan": {
+      "cumple": true,
+      "mensaje": "Documento válido: cumple con todas las validaciones.",
+      "motivos_rechazo": [],
+      "regla_vigencia": "anio",
+      "validaciones": [
+        {
+          "id": "hoja_en_blanco",
+          "pregunta": "¿Es una hoja en blanco?",
+          "resultado": "NO",
+          "ok": true,
+          "detalle": "El documento tiene contenido."
+        },
+        {
+          "id": "imagen_ilegible",
+          "pregunta": "¿La imagen es ilegible?",
+          "resultado": "NO",
+          "ok": true,
+          "detalle": "Los datos esenciales se leyeron y la MRZ es legible."
+        },
+        {
+          "id": "es_ine",
+          "pregunta": "¿Es una INE?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "Se identificó una credencial para votar del INE."
+        },
+        {
+          "id": "vigente",
+          "pregunta": "¿Está vigente?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "Año de vigencia 2030 (MRZ) contra año actual 2026."
+        },
+        {
+          "id": "nombre_coincide",
+          "pregunta": "¿El nombre coincide?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "El nombre coincide con la captura (sin importar orden, acentos ni mayúsculas)."
+        },
+        {
+          "id": "curp_coincide",
+          "pregunta": "¿La CURP coincide?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "La CURP coincide con la captura."
+        },
+        {
+          "id": "fecha_nacimiento_coincide",
+          "pregunta": "¿La fecha de nacimiento coincide?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "La fecha de nacimiento coincide con la captura."
+        }
+      ]
+    },
+    "id": "4f1c2d7e-9a3b-4c5d-8e6f-0a1b2c3d4e5f"
+  },
+  "210": {
+    "codigo": 210,
+    "estado": "PROCESADO_CON_DISCREPANCIAS",
+    "mensaje": "El documento se procesó, pero hay datos que se contradicen entre sí: revisa validacion.discrepancias.",
+    "frente": {
+      "apellido_paterno": "PEREZ",
+      "apellido_materno": "GOMEZ",
+      "nombre": "JUAN CARLOS",
+      "domicilio": {
+        "calle_numero": "C REFORMA 10",
+        "colonia": "COL CENTRO",
+        "codigo_postal": "06000",
+        "municipio_delegacion": "CUAUHTEMOC",
+        "estado": "CDMX"
+      },
+      "clave_elector": "PRLPJN85031209H400",
+      "curp": "PELJ850312HDFRPN05",
+      "fecha_nacimiento": "1985-03-12",
+      "sexo": "H",
+      "anio_registro": "2003 02",
+      "seccion": "1234",
+      "vigencia": "2030",
+      "pais": "MEXICO",
+      "formato_credencial": "nuevo",
+      "no_impresos": [
+        "estado_clave",
+        "municipio_clave",
+        "localidad_clave",
+        "anio_emision"
+      ]
+    },
+    "atras": {
+      "mrz": {
+        "lineas": [
+          "IDMEX1234567897<<1234567890123",
+          "8503127H3012316MEX<02<<12345<6",
+          "PEREZ<LOPEZ<<JUAN<CARLOS<<<<<<"
+        ],
+        "tipo_documento": "ID",
+        "pais_emisor": "MEX",
+        "cic": "123456789",
+        "folio": "123456789",
+        "seccion": "1234",
+        "identificador_ciudadano": "567890123",
+        "nacionalidad": "MEX",
+        "fecha_nacimiento": "1985-03-12",
+        "sexo": "H",
+        "vigencia": "2030-12-31",
+        "apellido_paterno": "PEREZ",
+        "apellido_materno": "LOPEZ",
+        "nombres": "JUAN CARLOS",
+        "digitos_control": {
+          "cic": true,
+          "fecha_nacimiento": true,
+          "vigencia": true,
+          "compuesto": true
+        },
+        "integra": true,
+        "origen": "texto"
+      }
+    },
+    "validacion": {
+      "ok": false,
+      "completo": true,
+      "coincidencias": [
+        "MRZ (dígitos de control)",
+        "curp (estructura y dígito verificador)",
+        "clave_elector (estructura)",
+        "fecha_nacimiento (MRZ, CURP, clave_elector)",
+        "sexo (MRZ, CURP, clave_elector)",
+        "domicilio (código postal)",
+        "domicilio (estado)",
+        "seccion (MRZ)",
+        "anio_registro (MRZ)",
+        "vigencia (MRZ)",
+        "clave_elector vs CURP (iniciales)",
+        "clave_elector vs CURP (fecha y sexo)",
+        "fecha_nacimiento (CURP vs MRZ)"
+      ],
+      "discrepancias": [
+        "apellidos y nombre (MRZ): similitud 0.90",
+        "nombre vs CURP (iniciales): esperado PEGJ, curp PELJ (difiere: materno) — la clave de elector y la CURP sí concuerdan entre sí: el dato sospechoso es el nombre",
+        "nombre vs clave_elector (iniciales): esperado PRGMJN, clave PRLPJN (difiere: materno) — la clave de elector y la CURP sí concuerdan entre sí: el dato sospechoso es el nombre",
+        "nombre vs CURP (consonantes): esperado RMN, curp RPN (difiere: materno) — la clave de elector y la CURP sí concuerdan entre sí: el dato sospechoso es el nombre"
+      ],
+      "sin_verificar": []
+    },
+    "avisos": [],
+    "clasificacion": {
+      "categoria": "ine",
+      "confianza": null,
+      "caracteres_leidos": 640,
+      "senales": [
+        "encabezado"
+      ]
+    },
+    "confianza": {
+      "cic": "alta",
+      "identificador_ciudadano": "alta",
+      "nombre": "media",
+      "curp": "alta",
+      "clave_elector": "alta",
+      "fecha_nacimiento": "alta",
+      "sexo": "alta",
+      "domicilio": "alta",
+      "seccion": "alta",
+      "anio_registro": "media",
+      "vigencia": "alta"
+    },
+    "meta": {
+      "tiempo_total_ms": 9000,
+      "tiempos_ms": {
+        "vlm_anverso": 5000
+      },
+      "paginas": 0
+    },
+    "validacion_plan": {
+      "cumple": false,
+      "mensaje": "Revisar documento y motivo de rechazo",
+      "motivos_rechazo": [
+        "¿El nombre coincide? NO: El nombre no coincide. En la solicitud y no en la credencial: LOPEZ. En la credencial y no en la solicitud: GOMEZ."
+      ],
+      "regla_vigencia": "anio",
+      "validaciones": [
+        {
+          "id": "hoja_en_blanco",
+          "pregunta": "¿Es una hoja en blanco?",
+          "resultado": "NO",
+          "ok": true,
+          "detalle": "El documento tiene contenido."
+        },
+        {
+          "id": "imagen_ilegible",
+          "pregunta": "¿La imagen es ilegible?",
+          "resultado": "NO",
+          "ok": true,
+          "detalle": "Los datos esenciales se leyeron y la MRZ es legible."
+        },
+        {
+          "id": "es_ine",
+          "pregunta": "¿Es una INE?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "Se identificó una credencial para votar del INE."
+        },
+        {
+          "id": "vigente",
+          "pregunta": "¿Está vigente?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "Año de vigencia 2030 (MRZ) contra año actual 2026."
+        },
+        {
+          "id": "nombre_coincide",
+          "pregunta": "¿El nombre coincide?",
+          "resultado": "NO",
+          "ok": false,
+          "detalle": "El nombre no coincide. En la solicitud y no en la credencial: LOPEZ. En la credencial y no en la solicitud: GOMEZ."
+        },
+        {
+          "id": "curp_coincide",
+          "pregunta": "¿La CURP coincide?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "La CURP coincide con la captura."
+        },
+        {
+          "id": "fecha_nacimiento_coincide",
+          "pregunta": "¿La fecha de nacimiento coincide?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "La fecha de nacimiento coincide con la captura."
+        }
+      ]
+    }
+  },
+  "211": {
+    "codigo": 211,
+    "estado": "PROCESADO_CON_AVISOS",
+    "mensaje": "El documento se procesó sin contradicciones, pero hay puntos que conviene revisar a mano: revisa avisos.",
+    "frente": {
+      "apellido_paterno": "PEREZ",
+      "apellido_materno": "LOPEZ",
+      "nombre": "JUAN CARLOS",
+      "domicilio": {
+        "calle_numero": "C REFORMA 10",
+        "colonia": "COL CENTRO",
+        "codigo_postal": "06000",
+        "municipio_delegacion": "CUAUHTEMOC",
+        "estado": "CDMX"
+      },
+      "clave_elector": "PRLPJN85031209H400",
+      "curp": "PELJ850312HDFRPN05",
+      "fecha_nacimiento": "1985-03-12",
+      "sexo": "H",
+      "anio_registro": "2003 02",
+      "seccion": "1234",
+      "vigencia": "2030",
+      "pais": "MEXICO",
+      "formato_credencial": "nuevo",
+      "no_impresos": [
+        "estado_clave",
+        "municipio_clave",
+        "localidad_clave",
+        "anio_emision"
+      ]
+    },
+    "atras": {
+      "mrz": {
+        "lineas": [
+          "IDMEX1234567897<<1234567890123",
+          "8503127H3012316MEX<02<<12345<6",
+          "PEREZ<LOPEZ<<JUAN<CARLOS<<<<<<"
+        ],
+        "tipo_documento": "ID",
+        "pais_emisor": "MEX",
+        "cic": "123456789",
+        "folio": "123456789",
+        "seccion": "1234",
+        "identificador_ciudadano": "567890123",
+        "nacionalidad": "MEX",
+        "fecha_nacimiento": "1985-03-12",
+        "sexo": "H",
+        "vigencia": "2030-12-31",
+        "apellido_paterno": "PEREZ",
+        "apellido_materno": "LOPEZ",
+        "nombres": "JUAN CARLOS",
+        "digitos_control": {
+          "cic": true,
+          "fecha_nacimiento": true,
+          "vigencia": true,
+          "compuesto": true
+        },
+        "integra": true,
+        "origen": "texto"
+      }
+    },
+    "validacion": {
+      "ok": true,
+      "completo": true,
+      "coincidencias": [
+        "MRZ (dígitos de control)",
+        "apellidos y nombre (MRZ)",
+        "curp (estructura y dígito verificador)",
+        "clave_elector (estructura)",
+        "fecha_nacimiento (MRZ, CURP, clave_elector)",
+        "sexo (MRZ, CURP, clave_elector)",
+        "domicilio (código postal)",
+        "domicilio (estado)",
+        "seccion (MRZ)",
+        "anio_registro (MRZ)",
+        "vigencia (MRZ)",
+        "nombre vs CURP (iniciales)",
+        "nombre vs clave_elector (iniciales)",
+        "nombre vs CURP (consonantes)",
+        "clave_elector vs CURP (iniciales)",
+        "clave_elector vs CURP (fecha y sexo)",
+        "fecha_nacimiento (CURP vs MRZ)"
+      ],
+      "discrepancias": [],
+      "sin_verificar": []
+    },
+    "avisos": [
+      "La credencial no está vigente (vigencia 2020)"
+    ],
+    "clasificacion": {
+      "categoria": "ine",
+      "confianza": null,
+      "caracteres_leidos": 640,
+      "senales": [
+        "encabezado"
+      ]
+    },
+    "confianza": {
+      "cic": "alta",
+      "identificador_ciudadano": "alta",
+      "nombre": "alta",
+      "curp": "alta",
+      "clave_elector": "alta",
+      "fecha_nacimiento": "alta",
+      "sexo": "alta",
+      "domicilio": "alta",
+      "seccion": "alta",
+      "anio_registro": "media",
+      "vigencia": "alta"
+    },
+    "meta": {
+      "tiempo_total_ms": 9000,
+      "tiempos_ms": {
+        "vlm_anverso": 5000
+      },
+      "paginas": 0
+    },
+    "validacion_plan": {
+      "cumple": true,
+      "mensaje": "Documento válido: cumple con todas las validaciones.",
+      "motivos_rechazo": [],
+      "regla_vigencia": "anio",
+      "validaciones": [
+        {
+          "id": "hoja_en_blanco",
+          "pregunta": "¿Es una hoja en blanco?",
+          "resultado": "NO",
+          "ok": true,
+          "detalle": "El documento tiene contenido."
+        },
+        {
+          "id": "imagen_ilegible",
+          "pregunta": "¿La imagen es ilegible?",
+          "resultado": "NO",
+          "ok": true,
+          "detalle": "Los datos esenciales se leyeron y la MRZ es legible."
+        },
+        {
+          "id": "es_ine",
+          "pregunta": "¿Es una INE?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "Se identificó una credencial para votar del INE."
+        },
+        {
+          "id": "vigente",
+          "pregunta": "¿Está vigente?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "Año de vigencia 2030 (MRZ) contra año actual 2026."
+        },
+        {
+          "id": "nombre_coincide",
+          "pregunta": "¿El nombre coincide?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "El nombre coincide con la captura (sin importar orden, acentos ni mayúsculas)."
+        },
+        {
+          "id": "curp_coincide",
+          "pregunta": "¿La CURP coincide?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "La CURP coincide con la captura."
+        },
+        {
+          "id": "fecha_nacimiento_coincide",
+          "pregunta": "¿La fecha de nacimiento coincide?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "La fecha de nacimiento coincide con la captura."
+        }
+      ]
+    }
+  },
+  "212": {
+    "codigo": 211,
+    "estado": "PROCESADO_CON_AVISOS",
+    "mensaje": "El documento se procesó sin contradicciones, pero hay puntos que conviene revisar a mano: revisa avisos.",
+    "frente": {
+      "apellido_paterno": "PEREZ",
+      "apellido_materno": "LOPEZ",
+      "nombre": "JUAN CARLOS",
+      "domicilio": {
+        "calle_numero": "C REFORMA 10",
+        "colonia": "COL CENTRO",
+        "codigo_postal": "06000",
+        "municipio_delegacion": "CUAUHTEMOC",
+        "estado": "CDMX"
+      },
+      "clave_elector": "PRLPJN85031209H400",
+      "curp": "PELJ850312HDFRPN05",
+      "fecha_nacimiento": "1985-03-12",
+      "sexo": "H",
+      "anio_registro": "2003 02",
+      "seccion": "1234",
+      "vigencia": "2030",
+      "pais": "MEXICO",
+      "formato_credencial": "nuevo",
+      "no_impresos": [
+        "estado_clave",
+        "municipio_clave",
+        "localidad_clave",
+        "anio_emision"
+      ]
+    },
+    "atras": {
+      "mrz": {
+        "error": "No se localizó la MRZ del reverso"
+      }
+    },
+    "validacion": {
+      "ok": true,
+      "completo": false,
+      "coincidencias": [
+        "curp (estructura y dígito verificador)",
+        "clave_elector (estructura)",
+        "fecha_nacimiento (MRZ, CURP, clave_elector)",
+        "sexo (MRZ, CURP, clave_elector)",
+        "domicilio (código postal)",
+        "domicilio (estado)",
+        "nombre vs CURP (iniciales)",
+        "nombre vs clave_elector (iniciales)",
+        "nombre vs CURP (consonantes)",
+        "clave_elector vs CURP (iniciales)",
+        "clave_elector vs CURP (fecha y sexo)"
+      ],
+      "discrepancias": [],
+      "sin_verificar": [
+        "MRZ: no se localizó o no se pudo leer el reverso"
+      ]
+    },
+    "avisos": [
+      "atras.mrz.cic: confianza baja (las lecturas no coinciden o no se pudo leer); revisar contra el original",
+      "No se pudo leer la MRZ del reverso"
+    ],
+    "clasificacion": {
+      "categoria": "ine",
+      "confianza": null,
+      "caracteres_leidos": 640,
+      "senales": [
+        "encabezado"
+      ]
+    },
+    "confianza": {
+      "cic": "baja",
+      "nombre": "alta",
+      "curp": "alta",
+      "clave_elector": "alta",
+      "fecha_nacimiento": "alta",
+      "sexo": "alta",
+      "domicilio": "alta",
+      "seccion": "media",
+      "anio_registro": "media",
+      "vigencia": "media"
+    },
+    "meta": {
+      "tiempo_total_ms": 9000,
+      "tiempos_ms": {
+        "vlm_anverso": 5000
+      },
+      "paginas": 0
+    },
+    "validacion_plan": {
+      "cumple": true,
+      "mensaje": "Documento válido: cumple con todas las validaciones.",
+      "motivos_rechazo": [],
+      "regla_vigencia": "anio",
+      "validaciones": [
+        {
+          "id": "hoja_en_blanco",
+          "pregunta": "¿Es una hoja en blanco?",
+          "resultado": "NO",
+          "ok": true,
+          "detalle": "El documento tiene contenido."
+        },
+        {
+          "id": "imagen_ilegible",
+          "pregunta": "¿La imagen es ilegible?",
+          "resultado": "NO",
+          "ok": true,
+          "detalle": "Los datos esenciales se leyeron; la MRZ no es legible."
+        },
+        {
+          "id": "es_ine",
+          "pregunta": "¿Es una INE?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "Se identificó una credencial para votar del INE."
+        },
+        {
+          "id": "vigente",
+          "pregunta": "¿Está vigente?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "Año de vigencia 2030 (anverso) contra año actual 2026."
+        },
+        {
+          "id": "nombre_coincide",
+          "pregunta": "¿El nombre coincide?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "El nombre coincide con la captura (sin importar orden, acentos ni mayúsculas)."
+        },
+        {
+          "id": "curp_coincide",
+          "pregunta": "¿La CURP coincide?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "La CURP coincide con la captura."
+        },
+        {
+          "id": "fecha_nacimiento_coincide",
+          "pregunta": "¿La fecha de nacimiento coincide?",
+          "resultado": "SI",
+          "ok": true,
+          "detalle": "La fecha de nacimiento coincide con la captura."
+        }
+      ]
+    }
+  },
+  "220": {
+    "codigo": 220,
+    "estado": "NO_ES_INE",
+    "mensaje": "El documento no es una credencial para votar (INE). No se extrajo ningún dato.",
+    "clasificacion": {
+      "categoria": "otro",
+      "confianza": null,
+      "caracteres_leidos": 240,
+      "motivo": "No es una credencial INE: parece pasaporte",
+      "documento_detectado": "pasaporte"
+    },
+    "validacion_plan": {
+      "cumple": false,
+      "mensaje": "Revisar documento y motivo de rechazo",
+      "motivos_rechazo": [
+        "¿Es una INE? NO: El documento no es una credencial para votar del INE."
+      ],
+      "regla_vigencia": "anio",
+      "validaciones": [
+        {
+          "id": "hoja_en_blanco",
+          "pregunta": "¿Es una hoja en blanco?",
+          "resultado": "NO",
+          "ok": true,
+          "detalle": "El documento tiene contenido."
+        },
+        {
+          "id": "imagen_ilegible",
+          "pregunta": "¿La imagen es ilegible?",
+          "resultado": "NO",
+          "ok": true,
+          "detalle": "Se leyó texto, pero el documento no es una credencial INE."
+        },
+        {
+          "id": "es_ine",
+          "pregunta": "¿Es una INE?",
+          "resultado": "NO",
+          "ok": false,
+          "detalle": "El documento no es una credencial para votar del INE."
+        },
+        {
+          "id": "vigente",
+          "pregunta": "¿Está vigente?",
+          "resultado": "NO_VERIFICADO",
+          "ok": false,
+          "detalle": "No aplica: el documento no es una INE."
+        },
+        {
+          "id": "nombre_coincide",
+          "pregunta": "¿El nombre coincide?",
+          "resultado": "NO_VERIFICADO",
+          "ok": false,
+          "detalle": "No aplica: el documento no es una INE."
+        },
+        {
+          "id": "curp_coincide",
+          "pregunta": "¿La CURP coincide?",
+          "resultado": "NO_VERIFICADO",
+          "ok": false,
+          "detalle": "No aplica: el documento no es una INE."
+        },
+        {
+          "id": "fecha_nacimiento_coincide",
+          "pregunta": "¿La fecha de nacimiento coincide?",
+          "resultado": "NO_VERIFICADO",
+          "ok": false,
+          "detalle": "No aplica: el documento no es una INE."
+        }
+      ]
+    }
+  },
+  "221": {
+    "codigo": 221,
+    "estado": "HOJA_EN_BLANCO",
+    "mensaje": "El documento viene en blanco o ilegible: no se leyó ningún texto.",
+    "clasificacion": {
+      "categoria": "hoja_en_blanco",
+      "confianza": null,
+      "caracteres_leidos": 0,
+      "motivo": "hoja en blanco"
+    },
+    "validacion_plan": {
+      "cumple": false,
+      "mensaje": "Revisar documento y motivo de rechazo",
+      "motivos_rechazo": [
+        "¿Es una hoja en blanco? SI: No se leyó texto en el documento.",
+        "¿La imagen es ilegible? SI: No se leyó texto en el documento.",
+        "¿Es una INE? NO: El documento no es una credencial para votar del INE."
+      ],
+      "regla_vigencia": "anio",
+      "validaciones": [
+        {
+          "id": "hoja_en_blanco",
+          "pregunta": "¿Es una hoja en blanco?",
+          "resultado": "SI",
+          "ok": false,
+          "detalle": "No se leyó texto en el documento."
+        },
+        {
+          "id": "imagen_ilegible",
+          "pregunta": "¿La imagen es ilegible?",
+          "resultado": "SI",
+          "ok": false,
+          "detalle": "No se leyó texto en el documento."
+        },
+        {
+          "id": "es_ine",
+          "pregunta": "¿Es una INE?",
+          "resultado": "NO",
+          "ok": false,
+          "detalle": "El documento no es una credencial para votar del INE."
+        },
+        {
+          "id": "vigente",
+          "pregunta": "¿Está vigente?",
+          "resultado": "NO_VERIFICADO",
+          "ok": false,
+          "detalle": "No aplica: el documento no es una INE."
+        },
+        {
+          "id": "nombre_coincide",
+          "pregunta": "¿El nombre coincide?",
+          "resultado": "NO_VERIFICADO",
+          "ok": false,
+          "detalle": "No aplica: el documento no es una INE."
+        },
+        {
+          "id": "curp_coincide",
+          "pregunta": "¿La CURP coincide?",
+          "resultado": "NO_VERIFICADO",
+          "ok": false,
+          "detalle": "No aplica: el documento no es una INE."
+        },
+        {
+          "id": "fecha_nacimiento_coincide",
+          "pregunta": "¿La fecha de nacimiento coincide?",
+          "resultado": "NO_VERIFICADO",
+          "ok": false,
+          "detalle": "No aplica: el documento no es una INE."
+        }
+      ]
+    }
+  },
+  "plan_rechazo": {
+    "cumple": false,
+    "mensaje": "Revisar documento y motivo de rechazo",
+    "motivos_rechazo": [
+      "¿El nombre coincide? NO: El nombre no coincide. En la credencial y no en la solicitud: CARLOS LOPEZ.",
+      "¿La CURP coincide? NO_VERIFICADO: No se envió la CURP de la solicitud.",
+      "¿La fecha de nacimiento coincide? NO: La fecha de nacimiento no coincide: credencial 1985-03-12 vs solicitud 1985-03-13."
+    ],
+    "regla_vigencia": "anio",
+    "validaciones": [
+      {
+        "id": "hoja_en_blanco",
+        "pregunta": "¿Es una hoja en blanco?",
+        "resultado": "NO",
+        "ok": true,
+        "detalle": "El documento tiene contenido."
+      },
+      {
+        "id": "imagen_ilegible",
+        "pregunta": "¿La imagen es ilegible?",
+        "resultado": "NO",
+        "ok": true,
+        "detalle": "Los datos esenciales se leyeron y la MRZ es legible."
+      },
+      {
+        "id": "es_ine",
+        "pregunta": "¿Es una INE?",
+        "resultado": "SI",
+        "ok": true,
+        "detalle": "Se identificó una credencial para votar del INE."
+      },
+      {
+        "id": "vigente",
+        "pregunta": "¿Está vigente?",
+        "resultado": "SI",
+        "ok": true,
+        "detalle": "Año de vigencia 2030 (MRZ) contra año actual 2026."
+      },
+      {
+        "id": "nombre_coincide",
+        "pregunta": "¿El nombre coincide?",
+        "resultado": "NO",
+        "ok": false,
+        "detalle": "El nombre no coincide. En la credencial y no en la solicitud: CARLOS LOPEZ."
+      },
+      {
+        "id": "curp_coincide",
+        "pregunta": "¿La CURP coincide?",
+        "resultado": "NO_VERIFICADO",
+        "ok": false,
+        "detalle": "No se envió la CURP de la solicitud."
+      },
+      {
+        "id": "fecha_nacimiento_coincide",
+        "pregunta": "¿La fecha de nacimiento coincide?",
+        "resultado": "NO",
+        "ok": false,
+        "detalle": "La fecha de nacimiento no coincide: credencial 1985-03-12 vs solicitud 1985-03-13."
+      }
+    ]
+  },
+  "plan_sin_solicitud": {
+    "cumple": false,
+    "mensaje": "Revisar documento y motivo de rechazo",
+    "motivos_rechazo": [
+      "¿El nombre coincide? NO_VERIFICADO: No se envió el nombre de la solicitud.",
+      "¿La CURP coincide? NO_VERIFICADO: No se envió la CURP de la solicitud.",
+      "¿La fecha de nacimiento coincide? NO_VERIFICADO: No se envió la fecha de nacimiento de la solicitud.",
+      "No se enviaron datos de la solicitud: las validaciones de coincidencia no se pudieron realizar."
+    ],
+    "regla_vigencia": "anio",
+    "validaciones": [
+      {
+        "id": "hoja_en_blanco",
+        "pregunta": "¿Es una hoja en blanco?",
+        "resultado": "NO",
+        "ok": true,
+        "detalle": "El documento tiene contenido."
+      },
+      {
+        "id": "imagen_ilegible",
+        "pregunta": "¿La imagen es ilegible?",
+        "resultado": "NO",
+        "ok": true,
+        "detalle": "Los datos esenciales se leyeron y la MRZ es legible."
+      },
+      {
+        "id": "es_ine",
+        "pregunta": "¿Es una INE?",
+        "resultado": "SI",
+        "ok": true,
+        "detalle": "Se identificó una credencial para votar del INE."
+      },
+      {
+        "id": "vigente",
+        "pregunta": "¿Está vigente?",
+        "resultado": "SI",
+        "ok": true,
+        "detalle": "Año de vigencia 2030 (MRZ) contra año actual 2026."
+      },
+      {
+        "id": "nombre_coincide",
+        "pregunta": "¿El nombre coincide?",
+        "resultado": "NO_VERIFICADO",
+        "ok": false,
+        "detalle": "No se envió el nombre de la solicitud."
+      },
+      {
+        "id": "curp_coincide",
+        "pregunta": "¿La CURP coincide?",
+        "resultado": "NO_VERIFICADO",
+        "ok": false,
+        "detalle": "No se envió la CURP de la solicitud."
+      },
+      {
+        "id": "fecha_nacimiento_coincide",
+        "pregunta": "¿La fecha de nacimiento coincide?",
+        "resultado": "NO_VERIFICADO",
+        "ok": false,
+        "detalle": "No se envió la fecha de nacimiento de la solicitud."
+      }
+    ]
+  },
+  "401": {
+    "codigo": 401,
+    "estado": "NO_AUTORIZADO",
+    "mensaje": "API key inválida o ausente (header X-API-Key)."
+  },
+  "400": {
+    "codigo": 400,
+    "estado": "ARCHIVO_NO_SOPORTADO",
+    "mensaje": "ine.jpg: tipo no soportado; se acepta PDF"
+  },
+  "413": {
+    "codigo": 413,
+    "estado": "ARCHIVO_DEMASIADO_GRANDE",
+    "mensaje": "ine.pdf: excede 25 MB"
+  },
+  "422": {
+    "codigo": 422,
+    "estado": "PETICION_INVALIDA",
+    "mensaje": "La petición no es válida."
+  },
+  "222": {
+    "codigo": 222,
+    "estado": "ARCHIVO_CORRUPTO",
+    "mensaje": "ine.pdf: dice ser PDF pero su contenido es otra cosa"
+  },
+  "223": {
+    "codigo": 223,
+    "estado": "PDF_PROTEGIDO",
+    "mensaje": "El PDF está protegido con contraseña. Quítasela y vuelve a enviarlo."
+  },
+  "224": {
+    "codigo": 224,
+    "estado": "LIMITE_PAGINAS",
+    "mensaje": "El documento excede el máximo de páginas por llamada: envía sólo las de la credencial."
+  },
+  "500": {
+    "codigo": 500,
+    "estado": "ERROR_INTERNO",
+    "mensaje": "Error interno. Repórtalo."
+  }
+}
